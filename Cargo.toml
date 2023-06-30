@@ -2,3 +2,7 @@
 name = "umd"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+tokio = { version = "1.29.0", features = ["full"] }
+tokio-signal = "0.2.9"
