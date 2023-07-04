@@ -1,49 +1,38 @@
-use std::env;
-use std::error::Error;
-use std::net::SocketAddr;
-use tokio::net::TcpListener;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let addr = env::args()
+fn main() {
+    let addr = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "127.0.0.1:9999".to_string());
 
-    let listener = TcpListener::bind(&addr).await?;
-    println!("umd listening on: {}", addr);
+    let socket_addr: std::net::SocketAddr = addr.parse().unwrap();
 
-    loop {
-        tokio::select! {
-            res = handle_connection(&listener) => {
+    tokio_uring::start(async {
+        let listener = tokio_uring::net::TcpListener::bind(socket_addr).unwrap();
+
+        println!("listening on {}", listener.local_addr().unwrap());
+
+        loop {
+            let (stream, socket_addr) = listener.accept().await.unwrap();
+            println!("{socket_addr:?} connected");
+            let mut buf = vec![0u8; 4096];
+
+            loop {
+                let (result, nbuf) = stream.read(buf).await;
+                buf = nbuf;
+                let read = result.unwrap();
+                println!("read -> {}", read);
+                if read == 0 {
+                    println!("{socket_addr} closed");
+                    break;
+                }
+
+                println!("content -> {}", String::from_utf8_lossy(&buf[..read]));
+
+                let (res, _) = stream.write_all("ok".to_string().into_bytes()).await;
                 match res {
-                    Ok(addr) => {
-                        println!("new connection from: {}", addr);
-                    }
-                    Err(e) => {
-                        println!("accept error: {}", e);
-                    }
+                    Ok(_) => (),
+                    Err(e) => println!("error on stream write: {}", e),
                 }
             }
-            _ = wait_for_shutdown() => {
-                println!();
-                println!("shutting down...");
-                break;
-            }
         }
-    }
-
-    Ok(())
-}
-
-async fn handle_connection(listener: &TcpListener) -> Result<SocketAddr, Box<dyn Error>> {
-    match listener.accept().await {
-        Ok((_, addr)) => Ok(addr),
-        Err(e) => Err(Box::new(e)),
-    }
-}
-
-async fn wait_for_shutdown() {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("failed to install CTRL+C signal handler");
+    });
 }
