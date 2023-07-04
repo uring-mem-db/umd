@@ -19,7 +19,6 @@ fn main() {
                 let (result, nbuf) = stream.read(buf).await;
                 buf = nbuf;
                 let read = result.unwrap();
-                println!("read -> {}", read);
                 if read == 0 {
                     println!("{socket_addr} closed");
                     break;
@@ -27,9 +26,12 @@ fn main() {
 
                 let content = String::from_utf8_lossy(&buf[..read]);
                 let request = parse_request(content.to_string()).unwrap();
-                match request.method.as_str() {
-                    "GET" => {
-                        println!("GET");
+                match request.method {
+                    RequestKind::Get => {
+                        println!("GET detected");
+                    }
+                    RequestKind::Set => {
+                        println!("SET detected");
                     }
                     _ => {
                         unimplemented!("not GET");
@@ -46,9 +48,26 @@ fn main() {
     });
 }
 
-#[derive(Default)]
+#[derive(PartialEq, Eq)]
+enum RequestKind {
+    Get,
+    Set,
+    Delete,
+}
+
+impl From<&str> for RequestKind {
+    fn from(s: &str) -> Self {
+        match s {
+            "GET" => RequestKind::Get,
+            "POST" | "SET" => RequestKind::Set,
+            "DELETE" => RequestKind::Delete,
+            _ => unimplemented!("not implemented"),
+        }
+    }
+}
+
 struct Request {
-    method: String,
+    method: RequestKind,
     path: String,
     version: String,
     headers: std::collections::HashMap<String, String>,
@@ -65,12 +84,13 @@ fn parse_request(request: String) -> Result<Request, String> {
     let version = parts.next().unwrap();
     let mut headers = std::collections::HashMap::new();
     for line in lines {
-        let (key, value) = line.split_once(':').unwrap();
-        headers.insert(key.to_string(), value.to_string());
+        if let Some((key, value)) = line.split_once(':') {
+            headers.insert(key.to_string(), value.to_string());
+        }
     }
 
     Ok(Request {
-        method: method.to_string(),
+        method: RequestKind::from(method),
         path: path.to_string(),
         version: version.to_string(),
         headers,
@@ -91,12 +111,26 @@ Accept: */*
 
         let output = parse_request(raw.to_string()).unwrap();
 
-        assert_eq!(output.method, "GET");
+        assert!(output.method == RequestKind::Get);
         assert_eq!(output.path, "/");
         assert_eq!(output.version, "HTTP/1.1");
         assert_eq!(output.headers.len(), 3);
         assert_eq!(output.headers.get("Host").unwrap(), " 127.0.0.1:9999");
         assert_eq!(output.headers.get("User-Agent").unwrap(), " curl/7.74.0");
         assert_eq!(output.headers.get("Accept").unwrap(), " */*");
+    }
+
+    #[test]
+    fn check_parse_set() {
+        let raw = r#"POST / HTTP/1.1
+        Host: localhost:9999
+        User-Agent: curl/7.74.0
+        Accept: */*
+        Content-Length: 9
+        Content-Type: application/x-www-form-urlencoded
+        
+        key=value"#;
+
+        let output = parse_request(raw.to_string()).unwrap();
     }
 }
