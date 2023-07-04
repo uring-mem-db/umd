@@ -9,5 +9,6 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rustup component add rustfmt
+RUN rustup component add clippy
 
 WORKDIR /home
