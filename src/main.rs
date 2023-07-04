@@ -1,3 +1,7 @@
+use std::sync::{Arc, Mutex};
+
+use engine::db::{HashMapDb, KeyValueStore};
+
 mod engine;
 
 use monoio::io::{AsyncReadRent, AsyncWriteRentExt};
@@ -9,41 +13,58 @@ async fn main() {
         .unwrap_or_else(|| "127.0.0.1:9999".to_string());
     let listener = monoio::net::TcpListener::bind(addr).unwrap();
     println!("listening on {}", listener.local_addr().unwrap());
+    let db = Arc::new(Mutex::new(HashMapDb::new()));
 
     loop {
         let incoming = listener.accept().await;
-        match incoming {
-            Ok((mut stream, addr)) => {
-                println!("accepted a connection from {}", addr);
-                let buf: Vec<u8> = Vec::with_capacity(8 * 1024);
-                let (res, b) = stream.read(buf).await;
-                if res.is_ok() {
-                    let content = String::from_utf8_lossy(&b[..]);
-                    let request = parse_request(content.to_string()).unwrap();
-                    match request.method {
-                        RequestKind::Get { key } => {
-                            println!("GET detected {key}");
-                        }
-                        RequestKind::Set { key, value } => {
-                            println!("SET detected {key} - {value}");
-                        }
-                        RequestKind::Del { key } => {
-                            println!("DEL detected {key}");
-                        }
-                    }
+        let db = db.clone();
+        
+        monoio::spawn(async move {
+            match incoming {
+                Ok((mut stream, addr)) => {
+                    println!("accepted a connection from {}", addr);
+                    let buf: Vec<u8> = Vec::with_capacity(8 * 1024);
+                    let (res, b) = stream.read(buf).await;
+                    if res.is_ok() {
+                        let content = String::from_utf8_lossy(&b[..]);
+                        let request = parse_request(content.to_string()).unwrap();
+                        let mut db = db.lock().unwrap();
 
-                    let (res, _) = stream.write_all("ok".to_string().into_bytes()).await;
-                    match res {
-                        Ok(_) => (),
-                        Err(e) => println!("error on stream write: {}", e),
+                        let response = match request.method {
+                            RequestKind::Get { key } => {
+                                println!("GET detected {key}");
+
+                                db.get(key.as_str()).map_or("not found", |v| v)
+                            }
+                            RequestKind::Set { key, value } => {
+                                println!("SET detected {key} - {value}");
+
+                                db.set(key.as_str(), value);
+
+                                "ok"
+                            }
+                            RequestKind::Del { key } => {
+                                println!("DEL detected {key}");
+
+                                db.del(key.as_str());
+
+                                "ok"
+                            }
+                        };
+
+                        let (res, _) = stream.write_all(format!("HTTP/1.1 200 OK\r\n\r\n{}", response.to_string()).into_bytes()).await;
+                        match res {
+                            Ok(_) => (),
+                            Err(e) => println!("error on stream write: {}", e),
+                        }
                     }
                 }
+                Err(e) => {
+                    println!("accepted connection failed: {}", e);
+                    return;
+                }
             }
-            Err(e) => {
-                println!("accepted connection failed: {}", e);
-                return;
-            }
-        }
+        });
     }
 }
 
@@ -66,7 +87,7 @@ impl RequestKind {
                 },
                 None => RequestKind::Del { key },
             },
-
+            "DELETE" | "DEL" => RequestKind::Del { key: key },
             _ => unimplemented!("not implemented"),
         }
     }
