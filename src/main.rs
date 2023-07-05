@@ -30,8 +30,8 @@ fn main() {
                     RequestKind::Get => {
                         println!("GET detected");
                     }
-                    RequestKind::Set => {
-                        println!("SET detected");
+                    RequestKind::Set { key, value } => {
+                        println!("SET detected {key} - {value}");
                     }
                     _ => {
                         unimplemented!("not GET");
@@ -51,15 +51,18 @@ fn main() {
 #[derive(PartialEq, Eq)]
 enum RequestKind {
     Get,
-    Set,
+    Set { key: String, value: String },
     Delete,
 }
 
-impl From<&str> for RequestKind {
-    fn from(s: &str) -> Self {
-        match s {
+impl RequestKind {
+    fn new(kind: &str, key: &str, value: Option<String>) -> Self {
+        match kind {
             "GET" => RequestKind::Get,
-            "POST" | "SET" => RequestKind::Set,
+            "POST" | "SET" => RequestKind::Set {
+                key: key.trim_matches('/').to_string(),
+                value: value.unwrap().trim().to_string(),
+            },
             "DELETE" => RequestKind::Delete,
             _ => unimplemented!("not implemented"),
         }
@@ -83,14 +86,17 @@ fn parse_request(request: String) -> Result<Request, String> {
     let path = parts.next().unwrap();
     let version = parts.next().unwrap();
     let mut headers = std::collections::HashMap::new();
+    let mut body = None;
     for line in lines {
         if let Some((key, value)) = line.split_once(':') {
-            headers.insert(key.to_string(), value.to_string());
+            headers.insert(key.trim().to_string(), value.trim().to_string());
+        } else {
+            body = Some(line.to_string());
         }
     }
 
     Ok(Request {
-        method: RequestKind::from(method),
+        method: RequestKind::new(method, path, body),
         path: path.to_string(),
         version: version.to_string(),
         headers,
@@ -115,22 +121,39 @@ Accept: */*
         assert_eq!(output.path, "/");
         assert_eq!(output.version, "HTTP/1.1");
         assert_eq!(output.headers.len(), 3);
-        assert_eq!(output.headers.get("Host").unwrap(), " 127.0.0.1:9999");
-        assert_eq!(output.headers.get("User-Agent").unwrap(), " curl/7.74.0");
-        assert_eq!(output.headers.get("Accept").unwrap(), " */*");
+        assert_eq!(output.headers.get("Host").unwrap(), "127.0.0.1:9999");
+        assert_eq!(output.headers.get("User-Agent").unwrap(), "curl/7.74.0");
+        assert_eq!(output.headers.get("Accept").unwrap(), "*/*");
     }
 
     #[test]
     fn check_parse_set() {
-        let raw = r#"POST / HTTP/1.1
+        let raw = r#"POST /key HTTP/1.1
         Host: localhost:9999
         User-Agent: curl/7.74.0
         Accept: */*
-        Content-Length: 9
+        Content-Length: 5
         Content-Type: application/x-www-form-urlencoded
         
-        key=value"#;
+        value"#;
 
         let output = parse_request(raw.to_string()).unwrap();
+        assert!(
+            output.method
+                == RequestKind::Set {
+                    key: "key".to_string(),
+                    value: "value".to_string()
+                }
+        );
+        assert_eq!(output.path, "/key");
+        assert_eq!(output.headers.len(), 5);
+        assert_eq!(output.headers.get("Host").unwrap(), "localhost:9999");
+        assert_eq!(output.headers.get("User-Agent").unwrap(), "curl/7.74.0");
+        assert_eq!(output.headers.get("Accept").unwrap(), "*/*");
+        assert_eq!(output.headers.get("Content-Length").unwrap(), "5");
+        assert_eq!(
+            output.headers.get("Content-Type").unwrap(),
+            "application/x-www-form-urlencoded"
+        );
     }
 }
