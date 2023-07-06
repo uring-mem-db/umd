@@ -19,8 +19,8 @@ async fn main() {
                     let content = String::from_utf8_lossy(&b[..]);
                     let request = parse_request(content.to_string()).unwrap();
                     match request.method {
-                        RequestKind::Get => {
-                            println!("GET detected");
+                        RequestKind::Get { key } => {
+                            println!("GET detected {key}");
                         }
                         RequestKind::Set { key, value } => {
                             println!("SET detected {key} - {value}");
@@ -47,17 +47,18 @@ async fn main() {
 
 #[derive(PartialEq, Eq)]
 enum RequestKind {
-    Get,
+    Get { key: String },
     Set { key: String, value: String },
     Del,
 }
 
 impl RequestKind {
     fn new(kind: &str, key: &str, value: Option<String>) -> Self {
+        let key = key.trim_matches('/').to_string();
         match kind {
-            "GET" => RequestKind::Get,
+            "GET" => RequestKind::Get { key },
             "POST" | "SET" => RequestKind::Set {
-                key: key.trim_matches('/').to_string(),
+                key,
                 value: value.unwrap().trim().to_string(),
             },
             "DEL" => RequestKind::Del,
@@ -106,7 +107,7 @@ mod tests {
 
     #[test]
     fn check_parse_get() {
-        let raw = r#"GET / HTTP/1.1
+        let raw = r#"GET /key HTTP/1.1
 Host: 127.0.0.1:9999
 User-Agent: curl/7.74.0
 Accept: */*
@@ -114,8 +115,13 @@ Accept: */*
 
         let output = parse_request(raw.to_string()).unwrap();
 
-        assert!(output.method == RequestKind::Get);
-        assert_eq!(output.path, "/");
+        assert!(
+            output.method
+                == RequestKind::Get {
+                    key: "key".to_string()
+                }
+        );
+        assert_eq!(output.path, "/key");
         assert_eq!(output.version, "HTTP/1.1");
         assert_eq!(output.headers.len(), 3);
         assert_eq!(output.headers.get("Host").unwrap(), "127.0.0.1:9999");
