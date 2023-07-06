@@ -25,8 +25,8 @@ async fn main() {
                         RequestKind::Set { key, value } => {
                             println!("SET detected {key} - {value}");
                         }
-                        _ => {
-                            unimplemented!("not GET");
+                        RequestKind::Del { key } => {
+                            println!("DEL detected {key}");
                         }
                     }
 
@@ -49,7 +49,7 @@ async fn main() {
 enum RequestKind {
     Get { key: String },
     Set { key: String, value: String },
-    Del,
+    Del { key: String },
 }
 
 impl RequestKind {
@@ -57,11 +57,14 @@ impl RequestKind {
         let key = key.trim_matches('/').to_string();
         match kind {
             "GET" => RequestKind::Get { key },
-            "POST" | "SET" => RequestKind::Set {
-                key,
-                value: value.unwrap().trim().to_string(),
+            "POST" | "SET" => match value {
+                Some(v) => RequestKind::Set {
+                    key,
+                    value: v.trim().to_string(),
+                },
+                None => RequestKind::Del { key },
             },
-            "DEL" => RequestKind::Del,
+
             _ => unimplemented!("not implemented"),
         }
     }
@@ -146,6 +149,35 @@ Accept: */*
                 == RequestKind::Set {
                     key: "key".to_string(),
                     value: "value".to_string()
+                }
+        );
+        assert_eq!(output.path, "/key");
+        assert_eq!(output.headers.len(), 5);
+        assert_eq!(output.headers.get("Host").unwrap(), "localhost:9999");
+        assert_eq!(output.headers.get("User-Agent").unwrap(), "curl/7.74.0");
+        assert_eq!(output.headers.get("Accept").unwrap(), "*/*");
+        assert_eq!(output.headers.get("Content-Length").unwrap(), "5");
+        assert_eq!(
+            output.headers.get("Content-Type").unwrap(),
+            "application/x-www-form-urlencoded"
+        );
+    }
+
+    #[test]
+    fn check_parse_del() {
+        let raw = r#"POST /key HTTP/1.1
+        Host: localhost:9999
+        User-Agent: curl/7.74.0
+        Accept: */*
+        Content-Length: 5
+        Content-Type: application/x-www-form-urlencoded
+"#;
+
+        let output = parse_request(raw.to_string()).unwrap();
+        assert!(
+            output.method
+                == RequestKind::Del {
+                    key: "key".to_string(),
                 }
         );
         assert_eq!(output.path, "/key");
