@@ -49,7 +49,7 @@ async fn main() {
 enum RequestKind {
     Get,
     Set { key: String, value: String },
-    Delete,
+    Del,
 }
 
 impl RequestKind {
@@ -60,7 +60,7 @@ impl RequestKind {
                 key: key.trim_matches('/').to_string(),
                 value: value.unwrap().trim().to_string(),
             },
-            "DELETE" => RequestKind::Delete,
+            "DEL" => RequestKind::Del,
             _ => unimplemented!("not implemented"),
         }
     }
