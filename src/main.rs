@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use engine::db::{HashMapDb, KeyValueStore};
 
 mod engine;
+mod protocol;
 
 use monoio::io::{AsyncReadRent, AsyncWriteRentExt};
 
@@ -18,7 +19,7 @@ async fn main() {
     loop {
         let incoming = listener.accept().await;
         let db = db.clone();
-        
+
         monoio::spawn(async move {
             match incoming {
                 Ok((mut stream, addr)) => {
