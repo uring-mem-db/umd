@@ -53,7 +53,12 @@ async fn main() {
                             }
                         };
 
-                        let (res, _) = stream.write_all(format!("HTTP/1.1 200 OK\r\n\r\n{}", response.to_string()).into_bytes()).await;
+                        let (res, _) = stream
+                            .write_all(
+                                format!("HTTP/1.1 200 OK\r\n\r\n{}", response.to_string())
+                                    .into_bytes(),
+                            )
+                            .await;
                         match res {
                             Ok(_) => (),
                             Err(e) => println!("error on stream write: {}", e),
