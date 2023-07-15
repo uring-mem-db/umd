@@ -32,19 +32,19 @@ async fn main() {
                         let mut db = db.lock().unwrap();
 
                         let response = match request.method {
-                            RequestKind::Get { key } => {
+                            Operation::Get { key } => {
                                 println!("GET detected {key}");
 
                                 db.get(key.as_str()).map_or("not found", |v| v)
                             }
-                            RequestKind::Set { key, value } => {
+                            Operation::Set { key, value } => {
                                 println!("SET detected {key} - {value}");
 
                                 db.set(key.as_str(), value);
 
                                 "ok"
                             }
-                            RequestKind::Del { key } => {
+                            Operation::Del { key } => {
                                 println!("DEL detected {key}");
 
                                 db.del(key.as_str());
@@ -75,32 +75,32 @@ async fn main() {
 }
 
 #[derive(PartialEq, Eq)]
-enum RequestKind {
+enum Operation {
     Get { key: String },
     Set { key: String, value: String },
     Del { key: String },
 }
 
-impl RequestKind {
+impl Operation {
     fn new(kind: &str, key: &str, value: Option<String>) -> Self {
         let key = key.trim_matches('/').to_string();
         match kind {
-            "GET" => RequestKind::Get { key },
+            "GET" => Operation::Get { key },
             "POST" | "SET" => match value {
-                Some(v) => RequestKind::Set {
+                Some(v) => Operation::Set {
                     key,
                     value: v.trim().to_string(),
                 },
-                None => RequestKind::Del { key },
+                None => Operation::Del { key },
             },
-            "DELETE" | "DEL" => RequestKind::Del { key: key },
+            "DELETE" | "DEL" => Operation::Del { key },
             _ => unimplemented!("not implemented"),
         }
     }
 }
 
 struct Request {
-    method: RequestKind,
+    method: Operation,
     path: String,
     version: String,
     headers: std::collections::HashMap<String, String>,
@@ -108,7 +108,7 @@ struct Request {
 
 fn parse_request(request: String) -> Result<Request, String> {
     let request = request.trim();
-    println!("{request}");
+    println!("req -> {request}");
     let mut lines = request.lines();
     let first_line = lines.next().unwrap();
     let mut parts = first_line.split_whitespace();
@@ -126,7 +126,7 @@ fn parse_request(request: String) -> Result<Request, String> {
     }
 
     Ok(Request {
-        method: RequestKind::new(method, path, body),
+        method: Operation::new(method, path, body),
         path: path.to_string(),
         version: version.to_string(),
         headers,
@@ -149,7 +149,7 @@ Accept: */*
 
         assert!(
             output.method
-                == RequestKind::Get {
+                == Operation::Get {
                     key: "key".to_string()
                 }
         );
@@ -175,7 +175,7 @@ Accept: */*
         let output = parse_request(raw.to_string()).unwrap();
         assert!(
             output.method
-                == RequestKind::Set {
+                == Operation::Set {
                     key: "key".to_string(),
                     value: "value".to_string()
                 }
@@ -205,7 +205,7 @@ Accept: */*
         let output = parse_request(raw.to_string()).unwrap();
         assert!(
             output.method
-                == RequestKind::Del {
+                == Operation::Del {
                     key: "key".to_string(),
                 }
         );
