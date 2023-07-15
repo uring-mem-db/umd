@@ -6,6 +6,7 @@ mod engine;
 mod protocol;
 
 use monoio::io::{AsyncReadRent, AsyncWriteRentExt};
+use protocol::Protocol;
 
 #[monoio::main]
 async fn main() {
@@ -29,9 +30,18 @@ async fn main() {
                     if res.is_ok() {
                         let content = String::from_utf8_lossy(&b[..]);
                         let request = parse_request(content.to_string()).unwrap();
+                        if request.kind == RequestKind::RedisCLI {
+                            let (res, _) = stream.write_all(format!("+OK\r\n").into_bytes()).await;
+                            match res {
+                                Ok(_) => (),
+                                Err(e) => println!("error on stream write: {}", e),
+                            }
+                            return;
+                        }
+
                         let mut db = db.lock().unwrap();
 
-                        let response = match request.method {
+                        let response = match request.method.unwrap() {
                             Operation::Get { key } => {
                                 println!("GET detected {key}");
 
@@ -67,7 +77,6 @@ async fn main() {
                 }
                 Err(e) => {
                     println!("accepted connection failed: {}", e);
-                    return;
                 }
             }
         });
@@ -99,22 +108,38 @@ impl Operation {
     }
 }
 
+#[derive(Default, PartialEq, Eq)]
+enum RequestKind {
+    /// Http kind is used to handle the HTTP requests using CURL.
+    #[default]
+    Http,
+
+    /// RedisCLI kind is used to handle the Redis CLI requests, which is a special protocol designed for redis.
+    RedisCLI,
+}
+
+#[derive(Default)]
 struct Request {
-    method: Operation,
+    kind: RequestKind,
+    method: Option<Operation>,
     path: String,
     version: String,
     headers: std::collections::HashMap<String, String>,
 }
 
 fn parse_request(request: String) -> Result<Request, String> {
+    try_parse_as_http(&request).or_else(|_| try_parse_as_redis_cli(&request))
+}
+
+fn try_parse_as_http(request: &str) -> Result<Request, String> {
     let request = request.trim();
-    println!("req -> {request}");
+    println!("http req {:?}", request);
     let mut lines = request.lines();
-    let first_line = lines.next().unwrap();
+    let first_line = lines.next().ok_or("invalid request")?;
     let mut parts = first_line.split_whitespace();
-    let method = parts.next().unwrap();
-    let path = parts.next().unwrap();
-    let version = parts.next().unwrap();
+    let method = parts.next().ok_or("invalid request")?;
+    let path = parts.next().ok_or("invalid request")?;
+    let version = parts.next().ok_or("invalid request")?;
     let mut headers = std::collections::HashMap::new();
     let mut body = None;
     for line in lines {
@@ -126,10 +151,21 @@ fn parse_request(request: String) -> Result<Request, String> {
     }
 
     Ok(Request {
-        method: Operation::new(method, path, body),
+        kind: RequestKind::Http,
+        method: Some(Operation::new(method, path, body)),
         path: path.to_string(),
         version: version.to_string(),
         headers,
+    })
+}
+
+fn try_parse_as_redis_cli(request: &str) -> Result<Request, String> {
+    println!("redis cli req {request:?}");
+    let r = protocol::resp::Resp::decode(request.as_bytes())?;
+    println!("redis cli req {r:?}");
+    Ok(Request {
+        kind: RequestKind::RedisCLI,
+        ..Default::default()
     })
 }
 
@@ -148,7 +184,7 @@ Accept: */*
         let output = parse_request(raw.to_string()).unwrap();
 
         assert!(
-            output.method
+            output.method.unwrap()
                 == Operation::Get {
                     key: "key".to_string()
                 }
@@ -174,7 +210,7 @@ Accept: */*
 
         let output = parse_request(raw.to_string()).unwrap();
         assert!(
-            output.method
+            output.method.unwrap()
                 == Operation::Set {
                     key: "key".to_string(),
                     value: "value".to_string()
@@ -204,7 +240,7 @@ Accept: */*
 
         let output = parse_request(raw.to_string()).unwrap();
         assert!(
-            output.method
+            output.method.unwrap()
                 == Operation::Del {
                     key: "key".to_string(),
                 }
@@ -219,5 +255,12 @@ Accept: */*
             output.headers.get("Content-Type").unwrap(),
             "application/x-www-form-urlencoded"
         );
+    }
+
+    #[test]
+    fn check_parse_redis_cli() {
+        let raw = "*1\r\n$7\r\nCOMMAND\r\n";
+        let output = parse_request(raw.to_string()).unwrap();
+        assert!(output.kind == RequestKind::RedisCLI);
     }
 }
