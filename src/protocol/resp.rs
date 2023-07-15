@@ -1,7 +1,7 @@
 use super::{Command, Protocol};
 
 /// RESP is actually a serialization protocol that supports the following data types: Simple Strings, Errors, Integers, Bulk Strings, and Arrays.
-pub(crate) struct Resp {}
+pub struct Resp {}
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum RespType {
@@ -66,7 +66,6 @@ impl TryFrom<String> for RespType {
                         tmp.push('\r');
                         tmp.push('\n');
 
-                        println!("tmp: {:?}", tmp);
                         v.push(Self::try_from(tmp)?);
                     }
 
@@ -80,13 +79,16 @@ impl TryFrom<String> for RespType {
 }
 
 impl Protocol for Resp {
-    fn decode(raw: Vec<u8>) -> Result<Command, &'static str> {
-        let _s = match String::from_utf8(raw) {
-            Ok(v) => v,
-            Err(_) => return Err("Error while decoding RESP"),
-        };
-
-        unimplemented!()
+    fn decode(raw: &[u8]) -> Result<Command, String> {
+        let s = String::from_utf8(raw.to_vec()).map_err(|_| "Error while decoding RESP")?;
+        let rt = RespType::try_from(s)?;
+        match rt {
+            RespType::SimpleString { value } => todo!(),
+            RespType::Error { value } => todo!(),
+            RespType::Integer { value } => todo!(),
+            RespType::BulkString { value } => todo!(),
+            RespType::Array { value } => Ok(Command::COMMAND),
+        }
     }
 
     fn encode(_command: Command) -> Vec<u8> {
