@@ -1,7 +1,6 @@
-use std::str::Chars;
-
 use super::{Command, Protocol};
 
+/// RESP is actually a serialization protocol that supports the following data types: Simple Strings, Errors, Integers, Bulk Strings, and Arrays.
 pub(crate) struct Resp {}
 
 #[derive(Debug, PartialEq)]
@@ -9,16 +8,12 @@ pub(crate) enum RespType {
     SimpleString { value: String },
     Error { value: String },
     Integer { value: i64 },
-    _BulkString { value: String },
+    BulkString { value: String },
     _Array { value: Vec<Box<RespType>> },
 }
 
 impl RespType {
-    fn decode_simple_string(chars: Chars) -> String {
-        chars.take_while(|char| *char != '\r').collect()
-    }
-
-    fn decode_integer(chars: Chars) -> Result<i64, &'static str> {
+    fn decode_integer(chars: std::str::Chars) -> Result<i64, &'static str> {
         let s: String = chars.take_while(|char| *char != '\r').collect();
 
         i64::from_str_radix(s.as_str(), 10).map_err(|_| "Error while parsing integer")
@@ -31,16 +26,28 @@ impl TryFrom<String> for RespType {
     fn try_from(value: String) -> Result<Self, <RespType as TryFrom<String>>::Error> {
         let mut it = value.chars();
 
+        // Remove the last two characters
+        it.next_back();
+        it.next_back();
+
         match it.next() {
             Some(c) => match c {
                 '+' => Ok(Self::SimpleString {
-                    value: Self::decode_simple_string(it.clone()),
+                    value: it.collect(),
                 }),
                 '-' => Ok(Self::Error {
-                    value: Self::decode_simple_string(it.clone()),
+                    value: it.collect(),
                 }),
-                ':' => Self::decode_integer(it.clone()).map(|v| Self::Integer { value: v }),
-                '$' => unimplemented!(),
+                ':' => Self::decode_integer(it).map(|v| Self::Integer { value: v }),
+                '$' => {
+                    let len = Self::decode_integer(it)?;
+                    let v = value.as_bytes();
+                    println!("{v:?}");
+                    Ok(Self::BulkString {
+                        value: String::from_utf8(v[4..4 + len as usize].to_vec())
+                            .map_err(|_| "Error while parsing RESP")?,
+                    })
+                }
                 '*' => unimplemented!(),
                 _ => Err("Invalid first character in RESP"),
             },
@@ -66,7 +73,7 @@ impl Protocol for Resp {
 
 #[cfg(test)]
 mod tests {
-    use super::RespType;
+    use super::*;
 
     #[test]
     fn test_simple_string() {
@@ -105,5 +112,33 @@ mod tests {
         let rt = RespType::try_from(s);
 
         assert_eq!(rt, Ok(RespType::Integer { value: -574 }))
+    }
+
+    #[test]
+    fn test_bulk_string() {
+        {
+            // random string
+            let s = "$5\r\nhello\r\n".to_string();
+            let rt = RespType::try_from(s);
+
+            assert_eq!(
+                rt,
+                Ok(RespType::BulkString {
+                    value: "hello".to_string()
+                })
+            )
+        }
+        {
+            // empty string
+            let s = "$0\r\n\r\n".to_string();
+            let rt = RespType::try_from(s);
+
+            assert_eq!(
+                rt,
+                Ok(RespType::BulkString {
+                    value: "".to_string()
+                })
+            )
+        }
     }
 }
