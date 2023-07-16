@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     git \
     make \
     clang \
+    redis-tools \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /home
