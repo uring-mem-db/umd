@@ -44,7 +44,13 @@ impl Command {
     }
 }
 
+#[derive(Debug)]
+pub enum CommandResponse {
+    Ok(String),
+    Err(String),
+}
+
 pub(crate) trait Protocol {
     fn decode(raw: &[u8]) -> Result<Command, String>;
-    fn encode(command: Command) -> Vec<u8>;
+    fn encode(command: CommandResponse) -> Vec<u8>;
 }

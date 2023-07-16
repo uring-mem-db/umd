@@ -1,4 +1,4 @@
-use super::{Command, Protocol};
+use super::{Command, CommandResponse, Protocol};
 
 pub struct Curl {}
 
@@ -25,8 +25,15 @@ impl Protocol for Curl {
         Ok(Command::new(method, path, body))
     }
 
-    fn encode(_command: Command) -> Vec<u8> {
-        unimplemented!()
+    fn encode(response: CommandResponse) -> Vec<u8> {
+        match response {
+            CommandResponse::Ok(body) => {
+                format!("HTTP/1.1 200 OK\r\n\r\n{body}").as_bytes().to_vec()
+            }
+            CommandResponse::Err(body) => format!("HTTP/1.1 422 Error\r\n\r\n{body}")
+                .as_bytes()
+                .to_vec(),
+        }
     }
 }
 
@@ -35,7 +42,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn check_parse_get() {
+    fn parse_get() {
         let raw = r#"GET /key HTTP/1.1
 Host: 127.0.0.1:9999
 User-Agent: curl/7.74.0
@@ -65,7 +72,7 @@ Accept: */*
     }
 
     #[test]
-    fn check_parse_set() {
+    fn parse_set() {
         let raw = r#"POST /key HTTP/1.1
         Host: localhost:9999
         User-Agent: curl/7.74.0
@@ -96,7 +103,7 @@ Accept: */*
     }
 
     #[test]
-    fn check_parse_del() {
+    fn parse_del() {
         let raw = r#"POST /key HTTP/1.1
         Host: localhost:9999
         User-Agent: curl/7.74.0
