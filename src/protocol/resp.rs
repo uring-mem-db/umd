@@ -91,8 +91,11 @@ impl Protocol for Resp {
         }
     }
 
-    fn encode(_command: Command) -> Vec<u8> {
-        unimplemented!()
+    fn encode(response: CommandResponse) -> Vec<u8> {
+        match response {
+            CommandResponse::Ok(_) => "+OK".to_owned().as_bytes().to_vec(),
+            CommandResponse::Err(body) => format!("-ERR {body}").as_bytes().to_vec(),
+        }
     }
 }
 
@@ -101,7 +104,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_simple_string() {
+    fn simple_string() {
         let s = "+OK\r\n".to_string();
         let rt = RespType::try_from(s);
 
@@ -114,7 +117,7 @@ mod tests {
     }
 
     #[test]
-    fn test_error() {
+    fn error() {
         let s = "-ERR: test\r\n".to_string();
         let rt = RespType::try_from(s);
 
@@ -127,7 +130,7 @@ mod tests {
     }
 
     #[test]
-    fn test_integer() {
+    fn integer() {
         let s = ":574\r\n".to_string();
         let rt = RespType::try_from(s);
 
@@ -140,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bulk_string() {
+    fn bulk_string() {
         {
             // random string
             let s = "$5\r\nhello\r\n".to_string();
@@ -168,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn test_array() {
+    fn array() {
         {
             // string array
             let s = "*2\r\n$5\r\nhello\r\n$5\r\nworld\r\n".to_string();

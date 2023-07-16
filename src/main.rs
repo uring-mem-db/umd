@@ -8,6 +8,8 @@ mod protocol;
 use monoio::io::{AsyncReadRent, AsyncWriteRentExt};
 use protocol::Protocol;
 
+use crate::protocol::CommandResponse;
+
 #[monoio::main]
 async fn main() {
     let addr = std::env::args()
@@ -30,47 +32,26 @@ async fn main() {
                     if res.is_ok() {
                         let content = String::from_utf8_lossy(&b[..]);
                         let request = parse_request(content.as_bytes()).unwrap();
-                        if request.kind == RequestKind::RedisCLI {
-                            let (res, _) = stream.write_all(format!("+OK\r\n").into_bytes()).await;
-                            match res {
-                                Ok(_) => (),
-                                Err(e) => println!("error on stream write: {}", e),
-                            }
-                            return;
-                        }
-
+                        // println!("{request:?}");
                         let mut db = db.lock().unwrap();
                         let response = match request.cmd {
-                            protocol::Command::Get { key } => {
-                                println!("GET detected {key}");
-
-                                db.get(key.as_str()).map_or("not found", |v| v)
-                            }
+                            protocol::Command::Get { key } => CommandResponse::Ok(
+                                db.get(key.as_str()).map_or("not found", |v| v).to_owned(),
+                            ),
                             protocol::Command::Set { key, value } => {
-                                println!("SET detected {key} - {value}");
-
                                 db.set(key.as_str(), value);
-
-                                "ok"
+                                CommandResponse::Ok("OK".to_owned())
                             }
                             protocol::Command::Del { key } => {
-                                println!("DEL detected {key}");
-
                                 db.del(key.as_str());
-
-                                "ok"
+                                CommandResponse::Ok("OK".to_owned())
                             }
-                            protocol::Command::COMMAND => {
-                                panic!("invalid command")
-                            }
+                            protocol::Command::COMMAND => CommandResponse::Ok("OK".to_owned()),
                         };
 
-                        let (res, _) = stream
-                            .write_all(
-                                format!("HTTP/1.1 200 OK\r\n\r\n{}", response.to_string())
-                                    .into_bytes(),
-                            )
-                            .await;
+                        let answer = create_answer(response, request.kind);
+                        // println!("{}", String::from_utf8(answer.clone()).unwrap());
+                        let (res, _) = stream.write_all(answer).await;
                         match res {
                             Ok(_) => (),
                             Err(e) => println!("error on stream write: {}", e),
@@ -85,7 +66,14 @@ async fn main() {
     }
 }
 
-#[derive(Default, PartialEq, Eq)]
+fn create_answer(response: CommandResponse, kind: RequestKind) -> Vec<u8> {
+    match kind {
+        RequestKind::Http => protocol::curl::Curl::encode(response),
+        RequestKind::RedisCLI => protocol::resp::Resp::encode(response),
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
 enum RequestKind {
     /// Http kind is used to handle the HTTP requests using CURL.
     #[default]
@@ -95,6 +83,7 @@ enum RequestKind {
     RedisCLI,
 }
 
+#[derive(Debug)]
 struct Request {
     kind: RequestKind,
     cmd: protocol::Command,
@@ -122,14 +111,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn check_parse_redis_cli() {
+    fn parse_redis_cli() {
         let raw = "*1\r\n$7\r\nCOMMAND\r\n";
         let output = parse_request(raw.as_bytes()).unwrap();
         assert!(output.kind == RequestKind::RedisCLI);
     }
 
     #[test]
-    fn check_parse_http() {
+    fn parse_http() {
         let raw = r#"GET /key HTTP/1.1
 Host: 127.0.0.1:9999
 User-Agent: curl/7.74.0
