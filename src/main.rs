@@ -29,7 +29,7 @@ async fn main() {
                     let (res, b) = stream.read(buf).await;
                     if res.is_ok() {
                         let content = String::from_utf8_lossy(&b[..]);
-                        let request = parse_request(content.to_string()).unwrap();
+                        let request = parse_request(content.as_bytes()).unwrap();
                         if request.kind == RequestKind::RedisCLI {
                             let (res, _) = stream.write_all(format!("+OK\r\n").into_bytes()).await;
                             match res {
@@ -40,26 +40,28 @@ async fn main() {
                         }
 
                         let mut db = db.lock().unwrap();
-
-                        let response = match request.method.unwrap() {
-                            Operation::Get { key } => {
+                        let response = match request.cmd {
+                            protocol::Command::Get { key } => {
                                 println!("GET detected {key}");
 
                                 db.get(key.as_str()).map_or("not found", |v| v)
                             }
-                            Operation::Set { key, value } => {
+                            protocol::Command::Set { key, value } => {
                                 println!("SET detected {key} - {value}");
 
                                 db.set(key.as_str(), value);
 
                                 "ok"
                             }
-                            Operation::Del { key } => {
+                            protocol::Command::Del { key } => {
                                 println!("DEL detected {key}");
 
                                 db.del(key.as_str());
 
                                 "ok"
+                            }
+                            protocol::Command::COMMAND => {
+                                panic!("invalid command")
                             }
                         };
 
@@ -83,31 +85,6 @@ async fn main() {
     }
 }
 
-#[derive(PartialEq, Eq)]
-enum Operation {
-    Get { key: String },
-    Set { key: String, value: String },
-    Del { key: String },
-}
-
-impl Operation {
-    fn new(kind: &str, key: &str, value: Option<String>) -> Self {
-        let key = key.trim_matches('/').to_string();
-        match kind {
-            "GET" => Operation::Get { key },
-            "POST" | "SET" => match value {
-                Some(v) => Operation::Set {
-                    key,
-                    value: v.trim().to_string(),
-                },
-                None => Operation::Del { key },
-            },
-            "DELETE" | "DEL" => Operation::Del { key },
-            _ => unimplemented!("not implemented"),
-        }
-    }
-}
-
 #[derive(Default, PartialEq, Eq)]
 enum RequestKind {
     /// Http kind is used to handle the HTTP requests using CURL.
@@ -118,55 +95,26 @@ enum RequestKind {
     RedisCLI,
 }
 
-#[derive(Default)]
 struct Request {
     kind: RequestKind,
-    method: Option<Operation>,
-    path: String,
-    version: String,
-    headers: std::collections::HashMap<String, String>,
+    cmd: protocol::Command,
 }
 
-fn parse_request(request: String) -> Result<Request, String> {
-    try_parse_as_http(&request).or_else(|_| try_parse_as_redis_cli(&request))
-}
+fn parse_request(raw_request: &[u8]) -> Result<Request, String> {
+    let http_cmd = protocol::curl::Curl::decode(raw_request);
+    let redis_cli_cmd = protocol::resp::Resp::decode(raw_request);
 
-fn try_parse_as_http(request: &str) -> Result<Request, String> {
-    let request = request.trim();
-    println!("http req {:?}", request);
-    let mut lines = request.lines();
-    let first_line = lines.next().ok_or("invalid request")?;
-    let mut parts = first_line.split_whitespace();
-    let method = parts.next().ok_or("invalid request")?;
-    let path = parts.next().ok_or("invalid request")?;
-    let version = parts.next().ok_or("invalid request")?;
-    let mut headers = std::collections::HashMap::new();
-    let mut body = None;
-    for line in lines {
-        if let Some((key, value)) = line.split_once(':') {
-            headers.insert(key.trim().to_string(), value.trim().to_string());
-        } else {
-            body = Some(line.to_string());
-        }
+    match (http_cmd, redis_cli_cmd) {
+        (Ok(cmd), _) => Ok(Request {
+            kind: RequestKind::Http,
+            cmd,
+        }),
+        (_, Ok(cmd)) => Ok(Request {
+            kind: RequestKind::RedisCLI,
+            cmd,
+        }),
+        _ => Err("invalid request".to_string()),
     }
-
-    Ok(Request {
-        kind: RequestKind::Http,
-        method: Some(Operation::new(method, path, body)),
-        path: path.to_string(),
-        version: version.to_string(),
-        headers,
-    })
-}
-
-fn try_parse_as_redis_cli(request: &str) -> Result<Request, String> {
-    println!("redis cli req {request:?}");
-    let r = protocol::resp::Resp::decode(request.as_bytes())?;
-    println!("redis cli req {r:?}");
-    Ok(Request {
-        kind: RequestKind::RedisCLI,
-        ..Default::default()
-    })
 }
 
 #[cfg(test)]
@@ -174,93 +122,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn check_parse_get() {
+    fn check_parse_redis_cli() {
+        let raw = "*1\r\n$7\r\nCOMMAND\r\n";
+        let output = parse_request(raw.as_bytes()).unwrap();
+        assert!(output.kind == RequestKind::RedisCLI);
+    }
+
+    #[test]
+    fn check_parse_http() {
         let raw = r#"GET /key HTTP/1.1
 Host: 127.0.0.1:9999
 User-Agent: curl/7.74.0
 Accept: */*
 "#;
 
-        let output = parse_request(raw.to_string()).unwrap();
-
-        assert!(
-            output.method.unwrap()
-                == Operation::Get {
-                    key: "key".to_string()
-                }
-        );
-        assert_eq!(output.path, "/key");
-        assert_eq!(output.version, "HTTP/1.1");
-        assert_eq!(output.headers.len(), 3);
-        assert_eq!(output.headers.get("Host").unwrap(), "127.0.0.1:9999");
-        assert_eq!(output.headers.get("User-Agent").unwrap(), "curl/7.74.0");
-        assert_eq!(output.headers.get("Accept").unwrap(), "*/*");
-    }
-
-    #[test]
-    fn check_parse_set() {
-        let raw = r#"POST /key HTTP/1.1
-        Host: localhost:9999
-        User-Agent: curl/7.74.0
-        Accept: */*
-        Content-Length: 5
-        Content-Type: application/x-www-form-urlencoded
-        
-        value"#;
-
-        let output = parse_request(raw.to_string()).unwrap();
-        assert!(
-            output.method.unwrap()
-                == Operation::Set {
-                    key: "key".to_string(),
-                    value: "value".to_string()
-                }
-        );
-        assert_eq!(output.path, "/key");
-        assert_eq!(output.headers.len(), 5);
-        assert_eq!(output.headers.get("Host").unwrap(), "localhost:9999");
-        assert_eq!(output.headers.get("User-Agent").unwrap(), "curl/7.74.0");
-        assert_eq!(output.headers.get("Accept").unwrap(), "*/*");
-        assert_eq!(output.headers.get("Content-Length").unwrap(), "5");
-        assert_eq!(
-            output.headers.get("Content-Type").unwrap(),
-            "application/x-www-form-urlencoded"
-        );
-    }
-
-    #[test]
-    fn check_parse_del() {
-        let raw = r#"POST /key HTTP/1.1
-        Host: localhost:9999
-        User-Agent: curl/7.74.0
-        Accept: */*
-        Content-Length: 5
-        Content-Type: application/x-www-form-urlencoded
-"#;
-
-        let output = parse_request(raw.to_string()).unwrap();
-        assert!(
-            output.method.unwrap()
-                == Operation::Del {
-                    key: "key".to_string(),
-                }
-        );
-        assert_eq!(output.path, "/key");
-        assert_eq!(output.headers.len(), 5);
-        assert_eq!(output.headers.get("Host").unwrap(), "localhost:9999");
-        assert_eq!(output.headers.get("User-Agent").unwrap(), "curl/7.74.0");
-        assert_eq!(output.headers.get("Accept").unwrap(), "*/*");
-        assert_eq!(output.headers.get("Content-Length").unwrap(), "5");
-        assert_eq!(
-            output.headers.get("Content-Type").unwrap(),
-            "application/x-www-form-urlencoded"
-        );
-    }
-
-    #[test]
-    fn check_parse_redis_cli() {
-        let raw = "*1\r\n$7\r\nCOMMAND\r\n";
-        let output = parse_request(raw.to_string()).unwrap();
-        assert!(output.kind == RequestKind::RedisCLI);
+        let output = parse_request(raw.as_bytes()).unwrap();
+        assert!(output.kind == RequestKind::Http);
     }
 }
