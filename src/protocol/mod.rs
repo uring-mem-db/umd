@@ -1,7 +1,7 @@
 pub mod curl;
 pub mod resp;
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     /// Get the value of key.
     /// If the key does not exist the special value nil is returned.
@@ -29,16 +29,17 @@ pub(crate) enum Command {
 impl Command {
     fn new(kind: &str, key: &str, value: Option<String>) -> Self {
         let key = key.trim_matches('/').to_string();
-        match kind {
-            "GET" => Command::Get { key },
-            "POST" | "SET" => match value {
+        let kind = kind.to_lowercase();
+        match kind.as_str() {
+            "get" => Command::Get { key },
+            "post" | "set" => match value {
                 Some(v) => Command::Set {
                     key,
                     value: v.trim().to_string(),
                 },
                 None => Command::Del { key },
             },
-            "DELETE" | "DEL" => Command::Del { key },
+            "del" => Command::Del { key },
             _ => unimplemented!("not implemented"),
         }
     }

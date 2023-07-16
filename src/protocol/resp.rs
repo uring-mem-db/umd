@@ -1,10 +1,10 @@
-use super::{Command, Protocol};
+use super::{Command, CommandResponse, Protocol};
 
 /// RESP is actually a serialization protocol that supports the following data types: Simple Strings, Errors, Integers, Bulk Strings, and Arrays.
 pub struct Resp {}
 
 #[derive(Debug, PartialEq)]
-pub(crate) enum RespType {
+enum RespType {
     SimpleString { value: String },
     Error { value: String },
     Integer { value: i64 },
@@ -81,13 +81,53 @@ impl TryFrom<String> for RespType {
 impl Protocol for Resp {
     fn decode(raw: &[u8]) -> Result<Command, String> {
         let s = String::from_utf8(raw.to_vec()).map_err(|_| "Error while decoding RESP")?;
+        // println!("{s}");
         let rt = RespType::try_from(s)?;
+        // println!("{rt:?}");
         match rt {
             RespType::SimpleString { value } => todo!(),
             RespType::Error { value } => todo!(),
             RespType::Integer { value } => todo!(),
             RespType::BulkString { value } => todo!(),
-            RespType::Array { value } => Ok(Command::COMMAND),
+            RespType::Array { value } => {
+                if value.len() == 1 {
+                    // NOTE: for now we assume that when have only len == 1 is a COMMAND.
+                    return Ok(Command::COMMAND);
+                }
+
+                let mut it = value.into_iter();
+                let operation = if let Some(s) = it.next() {
+                    match s {
+                        RespType::SimpleString { value } | RespType::BulkString { value } => value,
+                        _ => panic!(),
+                    }
+                } else {
+                    panic!()
+                };
+
+                let key = if let Some(s) = it.next() {
+                    match s {
+                        RespType::SimpleString { value } | RespType::BulkString { value } => value,
+                        _ => panic!(),
+                    }
+                } else {
+                    panic!()
+                };
+
+                let v = if let Some(s) = it.next() {
+                    match s {
+                        RespType::SimpleString { value } | RespType::BulkString { value } => {
+                            Some(value)
+                        }
+                        _ => panic!(),
+                    }
+                } else {
+                    None
+                };
+
+                let c = Command::new(&operation, &key, v);
+                Ok(c)
+            }
         }
     }
 
@@ -207,5 +247,17 @@ mod tests {
                 })
             )
         }
+    }
+
+    #[test]
+    fn set_request() {
+        let s = "*3\r\n$3\r\nset\r\n$4\r\nciao\r\n$4\r\ncome\r\n";
+        let cmd = Resp::decode(s.as_bytes()).unwrap();
+        assert!(
+            cmd == Command::Set {
+                key: "ciao".to_string(),
+                value: "come".to_string()
+            }
+        );
     }
 }
