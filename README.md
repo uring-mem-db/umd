@@ -18,8 +18,8 @@ cargo run
 #### Testing with curl
     
 ```zsh
-curl --data "value" localhost:9999  # set
-curl localhost:9999/key             # get
-curl -X POST localhost:9999/key     # del
+curl --data "value" localhost:9999/key  # set
+curl localhost:9999/key                 # get
+curl -X POST localhost:9999/key         # del
 ```
 
