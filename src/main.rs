@@ -27,41 +27,46 @@ async fn main() {
             match incoming {
                 Ok((mut stream, addr)) => {
                     println!("accepted a connection from {}", addr);
-                    let buf: Vec<u8> = Vec::with_capacity(8 * 1024);
-                    let (res, b) = stream.read(buf).await;
-                    if res.is_ok() {
-                        let content = String::from_utf8_lossy(&b[..]);
-                        let request = parse_request(content.as_bytes()).unwrap();
-                        // println!("{request:?}");
-                        let mut db = db.lock().unwrap();
-                        let response = match request.cmd {
-                            protocol::Command::Get { key } => CommandResponse::String {
-                                value: db.get(key.as_str()).map_or("not found", |v| v).to_owned(),
-                            },
-                            protocol::Command::Set { key, value } => {
-                                db.set(key.as_str(), value);
-                                CommandResponse::String {
-                                    value: "OK".to_owned(),
+                    loop {
+                        let buf: Vec<u8> = Vec::with_capacity(8 * 1024);
+                        let (res, b) = stream.read(buf).await;
+                        if res.is_ok() {
+                            let content = String::from_utf8_lossy(&b[..]);
+                            let request = parse_request(content.as_bytes()).unwrap();
+                            // println!("{request:?}");
+                            let mut db = db.lock().unwrap();
+                            let response = match request.cmd {
+                                protocol::Command::Get { key } => CommandResponse::String {
+                                    value: db
+                                        .get(key.as_str())
+                                        .map_or("not found", |v| v)
+                                        .to_owned(),
+                                },
+                                protocol::Command::Set { key, value } => {
+                                    db.set(key.as_str(), value);
+                                    CommandResponse::String {
+                                        value: "OK".to_owned(),
+                                    }
                                 }
-                            }
-                            protocol::Command::Del { key } => {
-                                db.del(key.as_str());
-                                CommandResponse::String {
-                                    value: "OK".to_owned(),
+                                protocol::Command::Del { key } => {
+                                    db.del(key.as_str());
+                                    CommandResponse::String {
+                                        value: "OK".to_owned(),
+                                    }
                                 }
-                            }
-                            protocol::Command::COMMAND => {
-                                CommandResponse::Array { value: Vec::new() }
-                            }
-                        };
+                                protocol::Command::COMMAND => {
+                                    CommandResponse::Array { value: Vec::new() }
+                                }
+                            };
 
-                        let answer: Vec<u8> = create_answer(response, request.kind);
+                            let answer: Vec<u8> = create_answer(response, request.kind);
 
-                        // println!("{}", String::from_utf8(answer.clone()).unwrap());
-                        let (res, _) = stream.write_all(answer).await;
-                        match res {
-                            Ok(_) => (),
-                            Err(e) => println!("error on stream write: {}", e),
+                            // println!("{}", String::from_utf8(answer.clone()).unwrap());
+                            let (res, _) = stream.write_all(answer).await;
+                            match res {
+                                Ok(_) => (),
+                                Err(e) => println!("error on stream write: {}", e),
+                            }
                         }
                     }
                 }
