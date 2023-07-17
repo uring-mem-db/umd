@@ -47,8 +47,10 @@ impl Command {
 
 #[derive(Debug)]
 pub enum CommandResponse {
-    Ok(String),
-    Err(String),
+    String { value: String },
+    Integer { value: i64 },
+    Array { value: Vec<CommandResponse> },
+    Err { value: String },
 }
 
 pub(crate) trait Protocol {

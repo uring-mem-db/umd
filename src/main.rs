@@ -35,21 +35,28 @@ async fn main() {
                         // println!("{request:?}");
                         let mut db = db.lock().unwrap();
                         let response = match request.cmd {
-                            protocol::Command::Get { key } => CommandResponse::Ok(
-                                db.get(key.as_str()).map_or("not found", |v| v).to_owned(),
-                            ),
+                            protocol::Command::Get { key } => CommandResponse::String {
+                                value: db.get(key.as_str()).map_or("not found", |v| v).to_owned(),
+                            },
                             protocol::Command::Set { key, value } => {
                                 db.set(key.as_str(), value);
-                                CommandResponse::Ok("OK".to_owned())
+                                CommandResponse::String {
+                                    value: "OK".to_owned(),
+                                }
                             }
                             protocol::Command::Del { key } => {
                                 db.del(key.as_str());
-                                CommandResponse::Ok("OK".to_owned())
+                                CommandResponse::String {
+                                    value: "OK".to_owned(),
+                                }
                             }
-                            protocol::Command::COMMAND => CommandResponse::Ok("OK".to_owned()),
+                            protocol::Command::COMMAND => {
+                                CommandResponse::Array { value: Vec::new() }
+                            }
                         };
 
-                        let answer = create_answer(response, request.kind);
+                        let answer: Vec<u8> = create_answer(response, request.kind);
+
                         // println!("{}", String::from_utf8(answer.clone()).unwrap());
                         let (res, _) = stream.write_all(answer).await;
                         match res {
