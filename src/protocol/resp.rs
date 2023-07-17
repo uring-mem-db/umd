@@ -46,7 +46,7 @@ impl<I: Iterator<Item = char>> RespDecoder<I> {
                     let len = self.decode_integer()?;
 
                     if len == -1 {
-                        unimplemented!("We should return None somehow, to see if it's really used.")
+                        return Ok(RespType::None);
                     }
 
                     Ok(RespType::BulkString {
@@ -55,6 +55,11 @@ impl<I: Iterator<Item = char>> RespDecoder<I> {
                 }
                 '*' => {
                     let len = self.decode_integer()?;
+
+                    if len == -1 {
+                        return Ok(RespType::None);
+                    }
+
                     let mut items: Vec<RespType> = Vec::with_capacity(len as usize);
 
                     for _ in 0..len {
@@ -81,6 +86,7 @@ enum RespType {
     Integer { value: i64 },
     BulkString { value: String },
     Array { value: Vec<RespType> },
+    None,
 }
 
 impl TryFrom<String> for RespType {
@@ -143,7 +149,8 @@ impl Protocol for Resp {
 
                 let c = Command::new(&operation, &key, v);
                 Ok(c)
-            }
+            },
+            RespType::None => todo!(),
         }
     }
 
