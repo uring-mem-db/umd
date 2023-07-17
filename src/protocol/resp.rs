@@ -149,15 +149,25 @@ impl Protocol for Resp {
 
                 let c = Command::new(&operation, &key, v);
                 Ok(c)
-            },
+            }
             RespType::None => todo!(),
         }
     }
 
     fn encode(response: CommandResponse) -> Vec<u8> {
         match response {
-            CommandResponse::Ok(_) => "+OK".to_owned().as_bytes().to_vec(),
-            CommandResponse::Err(body) => format!("-ERR {body}").as_bytes().to_vec(),
+            CommandResponse::String { value } => format!("+{value}\r\n").as_bytes().to_vec(),
+            CommandResponse::Integer { value } => format!("*{value}\r\n").as_bytes().to_vec(),
+            CommandResponse::Array { value } => {
+                let mut s = format!("*{}\r\n", value.len()).as_bytes().to_vec();
+
+                for el in value.into_iter() {
+                    s.append(&mut Self::encode(el));
+                }
+
+                s
+            }
+            CommandResponse::Err { value } => format!("-{value}").as_bytes().to_vec(),
         }
     }
 }
