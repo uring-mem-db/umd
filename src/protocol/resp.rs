@@ -3,6 +3,77 @@ use super::{Command, CommandResponse, Protocol};
 /// RESP is actually a serialization protocol that supports the following data types: Simple Strings, Errors, Integers, Bulk Strings, and Arrays.
 pub struct Resp {}
 
+struct RespDecoder<I: Iterator<Item = char>> {
+    chars: I,
+}
+
+impl<I: Iterator<Item = char>> RespDecoder<I> {
+    fn new(chars: I) -> Self {
+        Self { chars }
+    }
+
+    fn take_next_string(&mut self) -> String {
+        let s = self
+            .chars
+            .by_ref()
+            .take_while(|char| *char != '\r')
+            .collect();
+
+        self.chars.next(); // removing \n
+
+        s
+    }
+
+    fn decode_integer(&mut self) -> Result<i64, &'static str> {
+        self.take_next_string()
+            .parse()
+            .map_err(|_| "Error while parsing integer")
+    }
+
+    fn next_chunk(&mut self) -> Result<RespType, &'static str> {
+        match self.chars.next() {
+            Some(c) => match c {
+                '+' => Ok(RespType::SimpleString {
+                    value: self.take_next_string(),
+                }),
+                '-' => Ok(RespType::Error {
+                    value: self.take_next_string(),
+                }),
+                ':' => self
+                    .decode_integer()
+                    .map(|i| RespType::Integer { value: i }),
+                '$' => {
+                    let len = self.decode_integer()?;
+
+                    if len == -1 {
+                        unimplemented!("We should return None somehow, to see if it's really used.")
+                    }
+
+                    Ok(RespType::BulkString {
+                        value: self.take_next_string(),
+                    })
+                }
+                '*' => {
+                    let len = self.decode_integer()?;
+                    let mut items: Vec<RespType> = Vec::with_capacity(len as usize);
+
+                    for _ in 0..len {
+                        if let Ok(rt) = self.next_chunk() {
+                            items.push(rt);
+                        } else {
+                            return Err("Error while parsing array");
+                        }
+                    }
+
+                    Ok(RespType::Array { value: items })
+                }
+                _ => Err("Invalid first character in RESP"),
+            },
+            None => Err("Error while parsing RESP"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 enum RespType {
     SimpleString { value: String },
@@ -12,69 +83,14 @@ enum RespType {
     Array { value: Vec<RespType> },
 }
 
-impl RespType {
-    fn decode_integer(chars: std::str::Chars) -> Result<i64, &'static str> {
-        let s: String = chars.take_while(|char| *char != '\r').collect();
-
-        s.as_str()
-            .parse::<i64>()
-            .map_err(|_| "Error while parsing integer")
-    }
-}
-
 impl TryFrom<String> for RespType {
     type Error = &'static str;
 
     fn try_from(value: String) -> Result<Self, <RespType as TryFrom<String>>::Error> {
-        let mut it = value.chars();
+        let it = value.chars();
+        let mut rd = RespDecoder::new(it);
 
-        // Remove the last two characters
-        it.next_back();
-        it.next_back();
-
-        match it.next() {
-            Some(c) => match c {
-                '+' => Ok(Self::SimpleString {
-                    value: it.collect(),
-                }),
-                '-' => Ok(Self::Error {
-                    value: it.collect(),
-                }),
-                ':' => Self::decode_integer(it).map(|v| Self::Integer { value: v }),
-                '$' => {
-                    let len = Self::decode_integer(it)?;
-                    let v = value.as_bytes();
-                    Ok(Self::BulkString {
-                        value: String::from_utf8(v[4..4 + len as usize].to_vec())
-                            .map_err(|_| "Error while parsing RESP")?,
-                    })
-                }
-                '*' => {
-                    let len = Self::decode_integer(it.clone())?;
-                    let mut v = Vec::with_capacity(len as usize);
-                    let mut items = value
-                        .split("\r\n")
-                        .skip(1)
-                        .map(|v| v.to_owned())
-                        .collect::<Vec<String>>();
-                    items.remove(items.len() - 1);
-
-                    let chunk = if items[0].starts_with(':') { 1 } else { 2 };
-
-                    for item in items.chunks(chunk) {
-                        let mut tmp = item.join("\r\n");
-                        tmp.push('\r');
-                        tmp.push('\n');
-
-                        v.push(Self::try_from(tmp)?);
-                    }
-
-                    Ok(Self::Array { value: v })
-                }
-                _ => Err("Invalid first character in RESP"),
-            },
-            None => Err("Error while parsing RESP"),
-        }
+        rd.next_chunk()
     }
 }
 
@@ -243,6 +259,55 @@ mod tests {
                         RespType::Integer { value: 1 },
                         RespType::Integer { value: 2 },
                         RespType::Integer { value: 3 }
+                    ]
+                })
+            )
+        }
+        {
+            // heterogeneous array
+            let s = "*3\r\n:1\r\n+OK\r\n$5\r\nhello\r\n".to_string();
+            let rt = RespType::try_from(s);
+
+            assert_eq!(
+                rt,
+                Ok(RespType::Array {
+                    value: vec![
+                        RespType::Integer { value: 1 },
+                        RespType::SimpleString {
+                            value: "OK".to_string()
+                        },
+                        RespType::BulkString {
+                            value: "hello".to_string()
+                        }
+                    ]
+                })
+            )
+        }
+        {
+            // array of array
+            let s = "*2\r\n*2\r\n:1\r\n+OK\r\n*2\r\n:4\r\n+TEST\r\n".to_string();
+            let rt = RespType::try_from(s);
+
+            assert_eq!(
+                rt,
+                Ok(RespType::Array {
+                    value: vec![
+                        RespType::Array {
+                            value: vec![
+                                RespType::Integer { value: 1 },
+                                RespType::SimpleString {
+                                    value: "OK".to_string()
+                                }
+                            ]
+                        },
+                        RespType::Array {
+                            value: vec![
+                                RespType::Integer { value: 4 },
+                                RespType::SimpleString {
+                                    value: "TEST".to_string()
+                                }
+                            ]
+                        }
                     ]
                 })
             )
