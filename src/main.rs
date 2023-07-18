@@ -32,8 +32,10 @@ async fn main() {
                         let (res, b) = stream.read(buf).await;
                         if res.is_ok() {
                             let content = String::from_utf8_lossy(&b[..]);
+                            if content.is_empty() {
+                                break;
+                            }
                             let request = parse_request(content.as_bytes()).unwrap();
-                            // println!("{request:?}");
                             let mut db = db.lock().unwrap();
                             let response = match request.cmd {
                                 protocol::Command::Get { key } => CommandResponse::String {
@@ -60,8 +62,6 @@ async fn main() {
                             };
 
                             let answer: Vec<u8> = create_answer(response, request.kind);
-
-                            // println!("{}", String::from_utf8(answer.clone()).unwrap());
                             let (res, _) = stream.write_all(answer).await;
                             match res {
                                 Ok(_) => (),
