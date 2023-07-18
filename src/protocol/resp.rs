@@ -103,9 +103,7 @@ impl TryFrom<String> for RespType {
 impl Protocol for Resp {
     fn decode(raw: &[u8]) -> Result<Command, String> {
         let s = String::from_utf8(raw.to_vec()).map_err(|_| "Error while decoding RESP")?;
-        // println!("{s}");
         let rt = RespType::try_from(s)?;
-        // println!("{rt:?}");
         match rt {
             RespType::SimpleString { value } => todo!(),
             RespType::Error { value } => todo!(),

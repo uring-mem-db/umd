@@ -26,7 +26,7 @@ impl Protocol for Curl {
     }
 
     fn encode(response: CommandResponse) -> Vec<u8> {
-        let mut s = format!("HTTP/1.1 200 OK\r\n\r\n");
+        let mut s = "HTTP/1.1 200 OK\r\n\r\n".to_string();
         let body = match response {
             CommandResponse::String { value } => value,
             _ => panic!(),

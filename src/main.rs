@@ -12,11 +12,16 @@ use crate::protocol::CommandResponse;
 
 #[monoio::main]
 async fn main() {
+    let subscriber = tracing_subscriber::FmtSubscriber::builder()
+        .with_max_level(tracing::Level::TRACE)
+        .finish();
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+
     let addr = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "127.0.0.1:9999".to_string());
     let listener = monoio::net::TcpListener::bind(addr).unwrap();
-    println!("listening on {}", listener.local_addr().unwrap());
+    tracing::info!("listening on {}", listener.local_addr().unwrap());
     let db = Arc::new(Mutex::new(HashMapDb::new()));
 
     loop {
@@ -26,7 +31,7 @@ async fn main() {
         monoio::spawn(async move {
             match incoming {
                 Ok((mut stream, addr)) => {
-                    println!("accepted a connection from {}", addr);
+                    tracing::info!("accepted a connection from {}", addr);
                     loop {
                         let buf: Vec<u8> = Vec::with_capacity(8 * 1024);
                         let (res, b) = stream.read(buf).await;
@@ -67,7 +72,7 @@ async fn main() {
                             let (res, _) = stream.write_all(answer).await;
                             match res {
                                 Ok(_) => (),
-                                Err(e) => println!("error on stream write: {}", e),
+                                Err(e) => tracing::error!("error on stream write: {}", e),
                             }
 
                             if close_stream_after_response {
@@ -77,7 +82,7 @@ async fn main() {
                     }
                 }
                 Err(e) => {
-                    println!("accepted connection failed: {}", e);
+                    tracing::error!("accepted connection failed: {}", e);
                 }
             }
         });
