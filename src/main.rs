@@ -61,11 +61,17 @@ async fn main() {
                                 }
                             };
 
+                            let close_stream_after_response = request.kind == RequestKind::Http;
+
                             let answer: Vec<u8> = create_answer(response, request.kind);
                             let (res, _) = stream.write_all(answer).await;
                             match res {
                                 Ok(_) => (),
                                 Err(e) => println!("error on stream write: {}", e),
+                            }
+
+                            if close_stream_after_response {
+                                break;
                             }
                         }
                     }

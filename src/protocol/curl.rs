@@ -26,28 +26,15 @@ impl Protocol for Curl {
     }
 
     fn encode(response: CommandResponse) -> Vec<u8> {
-        // let mut s = format!("HTTP/1.1 200 OK\r\n\r\n").as_bytes().to_vec();
+        let mut s = format!("HTTP/1.1 200 OK\r\n\r\n");
+        let body = match response {
+            CommandResponse::String { value } => value,
+            _ => panic!(),
+        };
 
-        // s.append(match response {
-        //     CommandResponse::String { value } => &mut value.as_bytes().to_vec(),
-        //     CommandResponse::Integer { value } => {
-        //         &mut format!("{value}").as_bytes().to_vec()
-        //     },
-        //     CommandResponse::Array { value } => {
-        //         let mut s = Vec::<u8>::new();
+        s.push_str(&body);
 
-        //         for el in value.into_iter() {
-        //             s.append(&mut Self::encode(el));
-        //         }
-
-        //         s
-        //     },
-        //     CommandResponse::Err{ value } => &mut value.as_bytes().to_vec(),
-        // });
-
-        // s
-
-        unimplemented!()
+        s.into()
     }
 }
 
