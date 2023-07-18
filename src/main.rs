@@ -1,7 +1,11 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
 
 use engine::db::{HashMapDb, KeyValueStore};
 
+mod config;
 mod engine;
 mod protocol;
 
@@ -12,8 +16,10 @@ use crate::protocol::CommandResponse;
 
 #[monoio::main]
 async fn main() {
+    let config = config::Config::new();
+
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
-        .with_max_level(tracing::Level::TRACE)
+        .with_max_level(tracing::Level::from_str(&config.logger.level).unwrap())
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
