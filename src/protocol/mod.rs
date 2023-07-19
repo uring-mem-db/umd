@@ -24,6 +24,12 @@ pub(crate) enum Command {
 
     // FIXME: not sure what it does, but it's the first sent by redis-cli
     COMMAND,
+
+    /// Returns the config for the server instance.
+    Config,
+
+    /// Returns the server's liveliness response.
+    Ping,
 }
 
 impl Command {
@@ -40,6 +46,8 @@ impl Command {
                 None => Command::Del { key },
             },
             "del" => Command::Del { key },
+            "config" => Command::Config,
+            "ping" => Command::Ping,
             _ => unimplemented!("not implemented"),
         }
     }

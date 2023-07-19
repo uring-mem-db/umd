@@ -46,6 +46,7 @@ async fn main() {
                             if content.is_empty() {
                                 break;
                             }
+                            tracing::debug!(content = content.as_ref(), "received");
                             let request = parse_request(content.as_bytes()).unwrap();
                             let mut db = db.lock().unwrap();
                             let response = match request.cmd {
@@ -70,6 +71,12 @@ async fn main() {
                                 protocol::Command::COMMAND => {
                                     CommandResponse::Array { value: Vec::new() }
                                 }
+                                protocol::Command::Config => CommandResponse::String {
+                                    value: "OK".to_owned(),
+                                },
+                                protocol::Command::Ping => CommandResponse::String {
+                                    value: "PONG".to_owned(),
+                                },
                             };
 
                             let close_stream_after_response = request.kind == RequestKind::Http;
