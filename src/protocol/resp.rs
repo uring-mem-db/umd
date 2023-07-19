@@ -103,6 +103,10 @@ impl TryFrom<String> for RespType {
 impl Protocol for Resp {
     fn decode(raw: &[u8]) -> Result<Command, String> {
         let s = String::from_utf8(raw.to_vec()).map_err(|_| "Error while decoding RESP")?;
+        if s == "PING\r\n" {
+            return Ok(Command::Ping);
+        }
+
         let rt = RespType::try_from(s)?;
         match rt {
             RespType::SimpleString { value } => todo!(),
@@ -173,6 +177,20 @@ impl Protocol for Resp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_command() {
+        let s = "*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$4\r\nsave\r\n*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$10\r\nappendonly\r\n";
+        let cmd = Resp::decode(s.as_bytes()).unwrap();
+        assert!(cmd == Command::Config);
+    }
+
+    #[test]
+    fn command_command() {
+        let s = "PING\r\n";
+        let cmd = Resp::decode(s.as_bytes()).unwrap();
+        assert!(cmd == Command::Ping);
+    }
 
     #[test]
     fn simple_string() {
