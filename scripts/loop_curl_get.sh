@@ -24,8 +24,14 @@ if [ "$1" -le 0 ]; then
     exit 1
 fi
 
+start=$(date +%s)
+
 # Execute the curl GET request in a loop
 for (( i=1; i<=$1; i++ ))
 do
     curl -s -X GET http://localhost:9999/ >> /dev/null
 done
+
+end=$(date +%s)
+elapsed=$((end-start))
+echo "Elapsed time: $elapsed seconds"
