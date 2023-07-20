@@ -158,7 +158,11 @@ impl Protocol for Resp {
 
     fn encode(response: CommandResponse) -> Vec<u8> {
         match response {
-            CommandResponse::String { value } => format!("+{value}\r\n").as_bytes().to_vec(),
+            CommandResponse::String { value } => {
+                let s = format!("+{value}\r\n");
+                tracing::debug!(response = s, "resp");
+                s.as_bytes().to_vec()
+            }
             CommandResponse::Integer { value } => format!("*{value}\r\n").as_bytes().to_vec(),
             CommandResponse::Array { value } => {
                 let mut s = format!("*{}\r\n", value.len()).as_bytes().to_vec();

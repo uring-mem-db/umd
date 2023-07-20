@@ -41,56 +41,34 @@ async fn main() {
                     loop {
                         let buf: Vec<u8> = Vec::with_capacity(8 * 1024);
                         let (res, b) = stream.read(buf).await;
-                        if res.is_ok() {
-                            let content = String::from_utf8_lossy(&b[..]);
-                            if content.is_empty() {
-                                break;
-                            }
-                            tracing::debug!(content = content.as_ref(), "received");
-                            let request = parse_request(content.as_bytes()).unwrap();
-                            let mut db = db.lock().unwrap();
-                            let response = match request.cmd {
-                                protocol::Command::Get { key } => CommandResponse::String {
-                                    value: db
-                                        .get(key.as_str())
-                                        .map_or("not found", |v| v)
-                                        .to_owned(),
-                                },
-                                protocol::Command::Set { key, value } => {
-                                    db.set(key.as_str(), value);
-                                    CommandResponse::String {
-                                        value: "OK".to_owned(),
-                                    }
-                                }
-                                protocol::Command::Del { key } => {
-                                    db.del(key.as_str());
-                                    CommandResponse::String {
-                                        value: "OK".to_owned(),
-                                    }
-                                }
-                                protocol::Command::COMMAND => {
-                                    CommandResponse::Array { value: Vec::new() }
-                                }
-                                protocol::Command::Config => CommandResponse::String {
-                                    value: "OK".to_owned(),
-                                },
-                                protocol::Command::Ping => CommandResponse::String {
-                                    value: "PONG".to_owned(),
-                                },
-                            };
+                        if res.is_err() {
+                            tracing::error!("error on stream read: {}", res.err().unwrap());
+                            break;
+                        }
 
-                            let close_stream_after_response = request.kind == RequestKind::Http;
+                        let content = String::from_utf8_lossy(&b[..]);
+                        if content.is_empty() {
+                            tracing::debug!("content is empty, break...");
+                            break;
+                        }
 
-                            let answer: Vec<u8> = create_answer(response, request.kind);
-                            let (res, _) = stream.write_all(answer).await;
-                            match res {
-                                Ok(_) => (),
-                                Err(e) => tracing::error!("error on stream write: {}", e),
-                            }
+                        tracing::debug!(content = content.as_ref(), "received");
+                        let request = parse_request(content.as_bytes()).unwrap();
+                        tracing::trace!("before db lock");
+                        let mut db = db.lock().unwrap();
+                        tracing::trace!("after db lock");
 
-                            if close_stream_after_response {
-                                break;
-                            }
+                        let close_stream_after_response = request.kind == RequestKind::Http;
+                        let response = execute_command(request.cmd, &mut db);
+                        let answer: Vec<u8> = create_answer(response, request.kind);
+                        let (res, _) = stream.write_all(answer).await;
+                        match res {
+                            Ok(_) => (),
+                            Err(e) => tracing::error!("error on stream write: {}", e),
+                        }
+
+                        if close_stream_after_response {
+                            break;
                         }
                     }
                 }
@@ -99,6 +77,46 @@ async fn main() {
                 }
             }
         });
+    }
+}
+
+fn execute_command(cmd: protocol::Command, db: &mut HashMapDb) -> CommandResponse {
+    match cmd {
+        protocol::Command::Get { key } => CommandResponse::String {
+            value: db.get(key.as_str()).map_or("not found", |v| v).to_owned(),
+        },
+        protocol::Command::Set { key, value } => {
+            db.set(key.as_str(), value);
+            CommandResponse::String {
+                value: "OK".to_owned(),
+            }
+        }
+        protocol::Command::Del { key } => {
+            db.del(key.as_str());
+            CommandResponse::String {
+                value: "OK".to_owned(),
+            }
+        }
+        protocol::Command::COMMAND => CommandResponse::Array { value: Vec::new() },
+        protocol::Command::Config => CommandResponse::String {
+            value: "OK".to_owned(),
+        },
+        protocol::Command::Ping => CommandResponse::String {
+            value: "PONG".to_owned(),
+        },
+        protocol::Command::Incr { key } => {
+            match db.get(&key) {
+                Some(k) => {
+                    let k = k.parse::<u64>().unwrap();
+                    db.set(&key, (k + 1).to_string());
+                }
+                None => db.set(&key, 1.to_string()),
+            }
+
+            CommandResponse::String {
+                value: "OK".to_owned(),
+            }
+        }
     }
 }
 
@@ -145,6 +163,40 @@ fn parse_request(raw_request: &[u8]) -> Result<Request, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exec_incr() {
+        let mut db = HashMapDb::new();
+
+        // incr with no key
+        let cmd = protocol::Command::Incr {
+            key: "key".to_string(),
+        };
+
+        let res = execute_command(cmd, &mut db);
+        assert!(
+            res == CommandResponse::String {
+                value: "OK".to_owned()
+            }
+        );
+
+        let v = db.get("key").unwrap().parse::<u64>().unwrap();
+        assert!(v == 1);
+
+        // incr with key
+        let cmd = protocol::Command::Incr {
+            key: "key".to_string(),
+        };
+        let res = execute_command(cmd, &mut db);
+        assert!(
+            res == CommandResponse::String {
+                value: "OK".to_owned()
+            }
+        );
+
+        let v = db.get("key").unwrap().parse::<u64>().unwrap();
+        assert!(v == 2);
+    }
 
     #[test]
     fn parse_redis_cli() {

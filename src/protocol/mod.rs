@@ -30,6 +30,12 @@ pub(crate) enum Command {
 
     /// Returns the server's liveliness response.
     Ping,
+
+    /// Increments the number stored at key by one.
+    /// If the key does not exist, it is set to 0 before performing the operation
+    Incr {
+        key: String,
+    },
 }
 
 impl Command {
@@ -48,12 +54,13 @@ impl Command {
             "del" => Command::Del { key },
             "config" => Command::Config,
             "ping" => Command::Ping,
+            "incr" => Command::Incr { key },
             _ => unimplemented!("not implemented"),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum CommandResponse {
     String { value: String },
     Integer { value: i64 },
