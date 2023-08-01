@@ -18,9 +18,10 @@ cargo run
 #### Testing with curl
     
 ```zsh
-curl --data "value" localhost:9999/key  # set
-curl localhost:9999/key                 # get
-curl -X POST localhost:9999/key         # del
+curl --data "value" localhost:9999/key          # set
+curl --data "value EX 10" localhost:9999/key    # set with TTL 10s
+curl localhost:9999/key                         # get
+curl -X POST localhost:9999/key                 # del
 ```
 
 ## Architecture

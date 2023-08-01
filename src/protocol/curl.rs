@@ -14,15 +14,22 @@ impl Protocol for Curl {
         let _version = parts.next().ok_or("invalid request")?;
         let mut headers = std::collections::HashMap::new();
         let mut body = None;
+        let mut options = vec![];
         for line in lines {
             if let Some((key, value)) = line.split_once(':') {
                 headers.insert(key.trim().to_string(), value.trim().to_string());
             } else {
-                body = Some(line.to_string());
+                let v = line
+                    .trim()
+                    .split(' ')
+                    .map(|a| a.to_string())
+                    .collect::<Vec<String>>();
+                options = v[1..].to_vec();
+                body = Some(v[0].to_string());
             }
         }
 
-        Ok(Command::new(method, path, body, vec![], now))
+        Ok(Command::new(method, path, body, options, now))
     }
 
     fn encode(response: CommandResponse) -> Vec<u8> {
@@ -43,6 +50,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parse_set_with_ttl() {
+        let raw = r#"POST /key HTTP/1.1
+        Host: localhost:9999
+        User-Agent: curl/7.74.0
+        Accept: */*
+        Content-Length: 5
+        Content-Type: application/x-www-form-urlencoded
+        
+        value EX 10"#;
+
+        let now = std::time::Instant::now();
+        let output = Curl::decode(raw.as_bytes(), now).unwrap();
+        assert!(
+            output
+                == Command::Set {
+                    key: "key".to_string(),
+                    value: "value".to_string(),
+                    ttl: Some(now + std::time::Duration::from_secs(10)),
+                }
+        );
+    }
+
+    #[test]
     fn parse_get() {
         let raw = r#"GET /key HTTP/1.1
 Host: 127.0.0.1:9999
@@ -57,19 +87,6 @@ Accept: */*
                     key: "key".to_string()
                 }
         );
-
-        // assert!(
-        //     output.method.unwrap()
-        //         == Operation::Get {
-        //             key: "key".to_string()
-        //         }
-        // );
-        // assert_eq!(output.path, "/key");
-        // assert_eq!(output.version, "HTTP/1.1");
-        // assert_eq!(output.headers.len(), 3);
-        // assert_eq!(output.headers.get("Host").unwrap(), "127.0.0.1:9999");
-        // assert_eq!(output.headers.get("User-Agent").unwrap(), "curl/7.74.0");
-        // assert_eq!(output.headers.get("Accept").unwrap(), "*/*");
     }
 
     #[test]
@@ -92,16 +109,6 @@ Accept: */*
                     ttl: None,
                 }
         );
-        // assert_eq!(output.path, "/key");
-        // assert_eq!(output.headers.len(), 5);
-        // assert_eq!(output.headers.get("Host").unwrap(), "localhost:9999");
-        // assert_eq!(output.headers.get("User-Agent").unwrap(), "curl/7.74.0");
-        // assert_eq!(output.headers.get("Accept").unwrap(), "*/*");
-        // assert_eq!(output.headers.get("Content-Length").unwrap(), "5");
-        // assert_eq!(
-        //     output.headers.get("Content-Type").unwrap(),
-        //     "application/x-www-form-urlencoded"
-        // );
     }
 
     #[test]
@@ -121,15 +128,5 @@ Accept: */*
                     key: "key".to_string(),
                 }
         );
-        // assert_eq!(output.path, "/key");
-        // assert_eq!(output.headers.len(), 5);
-        // assert_eq!(output.headers.get("Host").unwrap(), "localhost:9999");
-        // assert_eq!(output.headers.get("User-Agent").unwrap(), "curl/7.74.0");
-        // assert_eq!(output.headers.get("Accept").unwrap(), "*/*");
-        // assert_eq!(output.headers.get("Content-Length").unwrap(), "5");
-        // assert_eq!(
-        //     output.headers.get("Content-Type").unwrap(),
-        //     "application/x-www-form-urlencoded"
-        // );
     }
 }
