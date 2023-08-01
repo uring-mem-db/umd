@@ -1,7 +1,7 @@
 ## Bench 1
 
 ```bash
-redis-benchmark -c 1 -t ping,set,get
+redis-benchmark -c 1 -t ping,set,get,incr --csv
 ```
 
 ```csv

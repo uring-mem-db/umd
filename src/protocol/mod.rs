@@ -6,9 +6,7 @@ pub(crate) enum Command {
     /// Get the value of key.
     /// If the key does not exist the special value nil is returned.
     /// An error is returned if the value stored at key is not a string, because GET only handles string values.
-    Get {
-        key: String,
-    },
+    Get { key: String },
 
     /// Set key to hold the string value.
     /// If key already holds a value, it is overwritten, regardless of its type.
@@ -19,12 +17,10 @@ pub(crate) enum Command {
     },
 
     /// Removes the specified keys. A key is ignored if it does not exist.
-    Del {
-        key: String,
-    },
+    Del { key: String },
 
-    // FIXME: not sure what it does, but it's the first sent by redis-cli
-    COMMAND,
+    /// Return documentary information about commands.
+    COMMAND_DOCS,
 
     /// Returns the config for the server instance.
     Config,
@@ -34,9 +30,7 @@ pub(crate) enum Command {
 
     /// Increments the number stored at key by one.
     /// If the key does not exist, it is set to 0 before performing the operation
-    Incr {
-        key: String,
-    },
+    Incr { key: String },
 }
 
 impl Command {
@@ -50,6 +44,7 @@ impl Command {
         let key = key.trim_matches('/').to_string();
         let kind = kind.to_lowercase();
         match kind.as_str() {
+            "command" if key == "DOCS" => Command::COMMAND_DOCS,
             "get" => Command::Get { key },
             "post" | "set" => match value {
                 Some(v) => Command::Set {

@@ -100,7 +100,7 @@ fn execute_command(cmd: protocol::Command, db: &mut HashMapDb) -> CommandRespons
                 value: "OK".to_owned(),
             }
         }
-        protocol::Command::COMMAND => CommandResponse::Array { value: Vec::new() },
+        protocol::Command::COMMAND_DOCS => CommandResponse::Array { value: Vec::new() },
         protocol::Command::Config => CommandResponse::String {
             value: "OK".to_owned(),
         },
@@ -212,7 +212,8 @@ mod tests {
 
     #[test]
     fn parse_redis_cli() {
-        let raw = "*1\r\n$7\r\nCOMMAND\r\n";
+        // NOTE: This is the first command redis-cli sends.
+        let raw = "*2\r\n$7\r\nCOMMAND\r\n$4\r\nDOCS\r\n";
         let output = parse_request(raw.as_bytes()).unwrap();
         assert!(output.kind == RequestKind::RedisCLI);
     }
