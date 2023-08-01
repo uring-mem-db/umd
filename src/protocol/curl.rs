@@ -3,7 +3,7 @@ use super::{Command, CommandResponse, Protocol};
 pub struct Curl {}
 
 impl Protocol for Curl {
-    fn decode(raw: &[u8]) -> Result<Command, String> {
+    fn decode(raw: &[u8], now: std::time::Instant) -> Result<Command, String> {
         let request = String::from_utf8(raw.to_vec()).map_err(|_| "Error while decoding RESP")?;
         let request = request.trim();
         let mut lines = request.lines();
@@ -22,7 +22,7 @@ impl Protocol for Curl {
             }
         }
 
-        Ok(Command::new(method, path, body))
+        Ok(Command::new(method, path, body, vec![], now))
     }
 
     fn encode(response: CommandResponse) -> Vec<u8> {
@@ -50,7 +50,7 @@ User-Agent: curl/7.74.0
 Accept: */*
 "#;
 
-        let output = Curl::decode(raw.as_bytes()).unwrap();
+        let output = Curl::decode(raw.as_bytes(), std::time::Instant::now()).unwrap();
         assert!(
             output
                 == Command::Get {
@@ -83,12 +83,13 @@ Accept: */*
         
         value"#;
 
-        let output = Curl::decode(raw.as_bytes()).unwrap();
+        let output = Curl::decode(raw.as_bytes(), std::time::Instant::now()).unwrap();
         assert!(
             output
                 == Command::Set {
                     key: "key".to_string(),
-                    value: "value".to_string()
+                    value: "value".to_string(),
+                    ttl: None,
                 }
         );
         // assert_eq!(output.path, "/key");
@@ -113,7 +114,7 @@ Accept: */*
         Content-Type: application/x-www-form-urlencoded
 "#;
 
-        let output = Curl::decode(raw.as_bytes()).unwrap();
+        let output = Curl::decode(raw.as_bytes(), std::time::Instant::now()).unwrap();
         assert!(
             output
                 == Command::Del {

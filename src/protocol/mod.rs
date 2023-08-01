@@ -15,6 +15,7 @@ pub(crate) enum Command {
     Set {
         key: String,
         value: String,
+        ttl: Option<std::time::Instant>,
     },
 
     /// Removes the specified keys. A key is ignored if it does not exist.
@@ -39,7 +40,13 @@ pub(crate) enum Command {
 }
 
 impl Command {
-    fn new(kind: &str, key: &str, value: Option<String>) -> Self {
+    fn new(
+        kind: &str,
+        key: &str,
+        value: Option<String>,
+        options: Vec<String>,
+        now: std::time::Instant,
+    ) -> Self {
         let key = key.trim_matches('/').to_string();
         let kind = kind.to_lowercase();
         match kind.as_str() {
@@ -48,6 +55,22 @@ impl Command {
                 Some(v) => Command::Set {
                     key,
                     value: v.trim().to_string(),
+                    ttl: if options.is_empty() {
+                        None
+                    } else {
+                        if options.len() != 2 {
+                            tracing::info!("Options for set not supported");
+                        }
+
+                        let cmd = &options[0];
+                        let value = options[1].parse().unwrap();
+                        if cmd == "EX" {
+                            Some(now + std::time::Duration::from_secs(value))
+                        } else {
+                            tracing::info!("Options for set not supported");
+                            None
+                        }
+                    },
                 },
                 None => Command::Del { key },
             },
@@ -69,6 +92,6 @@ pub enum CommandResponse {
 }
 
 pub(crate) trait Protocol {
-    fn decode(raw: &[u8]) -> Result<Command, String>;
+    fn decode(raw: &[u8], now: std::time::Instant) -> Result<Command, String>;
     fn encode(command: CommandResponse) -> Vec<u8>;
 }
