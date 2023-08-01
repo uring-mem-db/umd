@@ -114,11 +114,6 @@ impl Protocol for Resp {
             RespType::Integer { value } => todo!(),
             RespType::BulkString { value } => todo!(),
             RespType::Array { value } => {
-                if value.len() == 1 {
-                    // NOTE: for now we assume that when have only len == 1 is a COMMAND.
-                    return Ok(Command::COMMAND);
-                }
-
                 let mut it = value.into_iter();
                 let operation = if let Some(s) = it.next() {
                     match s {
