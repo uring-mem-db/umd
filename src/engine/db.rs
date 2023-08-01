@@ -1,8 +1,8 @@
 use std::{collections::HashMap, ptr::NonNull};
 
 pub(crate) trait KeyValueStore<K, V> {
-    fn get(&mut self, key: K) -> Option<&V>;
-    fn set(&mut self, key: K, value: V);
+    fn get(&mut self, key: K, now: std::time::Instant) -> Option<&V>;
+    fn set(&mut self, key: K, value: V, ttl: Option<std::time::Instant>);
     fn del(&mut self, key: K);
 }
 
@@ -21,6 +21,7 @@ pub(crate) struct HashMapDb {
     data: HashMap<String, Entry>,
     head: Option<NonNull<Entry>>,
     tail: Option<NonNull<Entry>>,
+    ttl: HashMap<String, std::time::Instant>,
 
     max_items: Option<u64>,
 }
@@ -41,8 +42,16 @@ impl HashMapDb {
 }
 
 impl KeyValueStore<&str, String> for HashMapDb {
-    fn get(&mut self, key: &str) -> Option<&String> {
-        let v = self.data.get_mut(key)?;
+    fn get(&mut self, key: &str, now: std::time::Instant) -> Option<&String> {
+        let v = match self.ttl.get(key) {
+            Some(ttl) if *ttl <= now => {
+                self.del(key);
+
+                None
+            }
+            _ => self.data.get_mut(key),
+        }?;
+
         if self.tail != self.head && self.tail != Some(v.into()) {
             // adjust head to second node if head is the node to be removed
             if self.head == Some(v.into()) {
@@ -78,7 +87,7 @@ impl KeyValueStore<&str, String> for HashMapDb {
         Some(&v.value)
     }
 
-    fn set(&mut self, key: &str, value: String) {
+    fn set(&mut self, key: &str, value: String, ttl: Option<std::time::Instant>) {
         let entry = Entry {
             key: key.to_string(),
             value,
@@ -109,10 +118,14 @@ impl KeyValueStore<&str, String> for HashMapDb {
         }
 
         self.tail = Some(e.into());
+
+        if let Some(ttl) = ttl {
+            self.ttl.insert(key.to_string(), ttl);
+        }
     }
 
     fn del(&mut self, key: &str) {
-        let mut e = self.data.get_mut(key).unwrap();
+        let e = self.data.get_mut(key).unwrap();
 
         // adjust head to second node if head is the node to be removed
         if self.head == Some(e.into()) {
@@ -137,6 +150,7 @@ impl KeyValueStore<&str, String> for HashMapDb {
         }
 
         self.data.remove(key);
+        self.ttl.remove(key);
     }
 }
 
@@ -144,34 +158,43 @@ impl KeyValueStore<&str, String> for HashMapDb {
 mod tests {
     use super::*;
 
-#[test]
-fn lru() {
-    let mut db = HashMapDb::new(Some(3));
-    db.set("one", "one".to_string());
-    db.set("two", "two".to_string());
-    db.set("three", "three".to_string());
+    #[test]
+    fn lru() {
+        let mut db = HashMapDb::new(Some(3));
+        db.set("one", "one".to_string(), None);
+        db.set("two", "two".to_string(), None);
+        db.set("three", "three".to_string(), None);
 
-    db.set("four", "four".to_string());
-    let outdated = db.get("one");
-    assert_eq!(outdated, None);
+        db.set("four", "four".to_string(), None);
+        let outdated = db.get("one", std::time::Instant::now());
+        assert_eq!(outdated, None);
 
-    assert_eq!(db.get("two"), Some(&"two".to_string()));
-}
+        assert_eq!(
+            db.get("two", std::time::Instant::now()),
+            Some(&"two".to_string())
+        );
+    }
 
     #[test]
     fn linked_list() {
         let mut db = HashMapDb::new(None);
 
         // first set
-        db.set("foo", "bar".to_string());
-        assert_eq!(db.get("foo"), Some(&"bar".to_string()));
+        db.set("foo", "bar".to_string(), None);
+        assert_eq!(
+            db.get("foo", std::time::Instant::now()),
+            Some(&"bar".to_string())
+        );
         assert!(db.tail.is_some());
         assert!(db.head.is_some());
         assert_eq!(db.tail, db.head);
 
         // second set
-        db.set("foz", "baz".to_string());
-        assert_eq!(db.get("foz"), Some(&"baz".to_string()));
+        db.set("foz", "baz".to_string(), None);
+        assert_eq!(
+            db.get("foz", std::time::Instant::now()),
+            Some(&"baz".to_string())
+        );
         assert!(db.tail.is_some());
         assert!(db.head.is_some());
         assert_ne!(db.tail, db.head);
@@ -181,7 +204,7 @@ fn lru() {
         }
 
         // get first key, it should be the most recently used now then moved to the tail
-        let output = db.get("foo");
+        let output = db.get("foo", std::time::Instant::now());
         assert_eq!(output, Some(&"bar".to_string()));
         assert_ne!(db.tail, db.head);
         unsafe {
@@ -190,8 +213,11 @@ fn lru() {
         }
 
         // set a third key
-        db.set("fob", "bax".to_string());
-        assert_eq!(db.get("fob"), Some(&"bax".to_string()));
+        db.set("fob", "bax".to_string(), None);
+        assert_eq!(
+            db.get("fob", std::time::Instant::now()),
+            Some(&"bax".to_string())
+        );
         assert_ne!(db.tail, db.head);
         unsafe {
             assert_eq!((*(db.tail.unwrap().as_ptr())).value, "bax".to_string());
@@ -214,5 +240,24 @@ fn lru() {
         db.del("fob");
         assert_eq!(db.tail, None);
         assert_eq!(db.head, None);
+    }
+
+    #[test]
+    fn lazy_ttl() {
+        let mut db = HashMapDb::new(None);
+        let now = std::time::Instant::now();
+        db.set(
+            "foo",
+            "bar".to_string(),
+            Some(now + std::time::Duration::from_secs(10)),
+        );
+        assert_eq!(
+            db.get("foo", now + std::time::Duration::from_secs(1)),
+            Some(&"bar".to_string())
+        );
+        assert_eq!(
+            db.get("foo", now + std::time::Duration::from_secs(11)),
+            None
+        );
     }
 }

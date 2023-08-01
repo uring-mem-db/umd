@@ -83,10 +83,13 @@ async fn main() {
 fn execute_command(cmd: protocol::Command, db: &mut HashMapDb) -> CommandResponse {
     match cmd {
         protocol::Command::Get { key } => CommandResponse::String {
-            value: db.get(key.as_str()).map_or("not found", |v| v).to_owned(),
+            value: db
+                .get(key.as_str(), std::time::Instant::now())
+                .map_or("not found", |v| v)
+                .to_owned(),
         },
-        protocol::Command::Set { key, value } => {
-            db.set(key.as_str(), value);
+        protocol::Command::Set { key, value, ttl } => {
+            db.set(key.as_str(), value, ttl);
             CommandResponse::String {
                 value: "OK".to_owned(),
             }
@@ -105,12 +108,12 @@ fn execute_command(cmd: protocol::Command, db: &mut HashMapDb) -> CommandRespons
             value: "PONG".to_owned(),
         },
         protocol::Command::Incr { key } => {
-            match db.get(&key) {
+            match db.get(&key, std::time::Instant::now()) {
                 Some(k) => {
                     let k = k.parse::<u64>().unwrap();
-                    db.set(&key, (k + 1).to_string());
+                    db.set(&key, (k + 1).to_string(), None);
                 }
-                None => db.set(&key, 1.to_string()),
+                None => db.set(&key, 1.to_string(), None),
             }
 
             CommandResponse::String {
@@ -144,8 +147,9 @@ struct Request {
 }
 
 fn parse_request(raw_request: &[u8]) -> Result<Request, String> {
-    let http_cmd = protocol::curl::Curl::decode(raw_request);
-    let redis_cli_cmd = protocol::resp::Resp::decode(raw_request);
+    let now = std::time::Instant::now();
+    let http_cmd = protocol::curl::Curl::decode(raw_request, now);
+    let redis_cli_cmd = protocol::resp::Resp::decode(raw_request, now);
 
     match (http_cmd, redis_cli_cmd) {
         (Ok(cmd), _) => Ok(Request {
@@ -180,7 +184,11 @@ mod tests {
             }
         );
 
-        let v = db.get("key").unwrap().parse::<u64>().unwrap();
+        let v = db
+            .get("key", std::time::Instant::now())
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
         assert!(v == 1);
 
         // incr with key
@@ -194,7 +202,11 @@ mod tests {
             }
         );
 
-        let v = db.get("key").unwrap().parse::<u64>().unwrap();
+        let v = db
+            .get("key", std::time::Instant::now())
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
         assert!(v == 2);
     }
 

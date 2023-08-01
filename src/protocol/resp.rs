@@ -101,7 +101,7 @@ impl TryFrom<String> for RespType {
 }
 
 impl Protocol for Resp {
-    fn decode(raw: &[u8]) -> Result<Command, String> {
+    fn decode(raw: &[u8], now: std::time::Instant) -> Result<Command, String> {
         let s = String::from_utf8(raw.to_vec()).map_err(|_| "Error while decoding RESP")?;
         if s == "PING\r\n" {
             return Ok(Command::Ping);
@@ -149,7 +149,14 @@ impl Protocol for Resp {
                     None
                 };
 
-                let c = Command::new(&operation, &key, v);
+                let options = it
+                    .map(|v| match v {
+                        RespType::BulkString { value } => value,
+                        _ => panic!(),
+                    })
+                    .collect::<Vec<String>>();
+
+                let c = Command::new(&operation, &key, v, options, now);
                 Ok(c)
             }
             RespType::None => todo!(),
@@ -185,14 +192,14 @@ mod tests {
     #[test]
     fn config_command() {
         let s = "*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$4\r\nsave\r\n*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$10\r\nappendonly\r\n";
-        let cmd = Resp::decode(s.as_bytes()).unwrap();
+        let cmd = Resp::decode(s.as_bytes(), std::time::Instant::now()).unwrap();
         assert!(cmd == Command::Config);
     }
 
     #[test]
     fn command_command() {
         let s = "PING\r\n";
-        let cmd = Resp::decode(s.as_bytes()).unwrap();
+        let cmd = Resp::decode(s.as_bytes(), std::time::Instant::now()).unwrap();
         assert!(cmd == Command::Ping);
     }
 
@@ -354,11 +361,27 @@ mod tests {
     #[test]
     fn set_request() {
         let s = "*3\r\n$3\r\nset\r\n$4\r\nciao\r\n$4\r\ncome\r\n";
-        let cmd = Resp::decode(s.as_bytes()).unwrap();
+        let cmd = Resp::decode(s.as_bytes(), std::time::Instant::now()).unwrap();
         assert!(
             cmd == Command::Set {
                 key: "ciao".to_string(),
-                value: "come".to_string()
+                value: "come".to_string(),
+                ttl: None,
+            }
+        );
+    }
+
+    #[test]
+    fn set_with_expire() {
+        let now = std::time::Instant::now();
+        let s = "*5\r\n$3\r\nset\r\n$4\r\nciao\r\n$4\r\ncome\r\n$2\r\nEX\r\n$2\r\n10\r\n";
+        let cmd = Resp::decode(s.as_bytes(), now).unwrap();
+        assert_eq!(
+            cmd,
+            Command::Set {
+                key: "ciao".to_string(),
+                value: "come".to_string(),
+                ttl: Some(now + std::time::Duration::from_secs(10)),
             }
         );
     }
