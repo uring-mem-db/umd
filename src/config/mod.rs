@@ -1,6 +1,7 @@
 #[derive(Default, serde::Deserialize)]
 pub struct Config {
     pub logger: Logger,
+    pub engine: Engine,
 }
 
 impl Config {
@@ -24,6 +25,11 @@ pub struct Logger {
 
 fn default_level() -> String {
     "info".to_string()
+}
+
+#[derive(Default, serde::Deserialize)]
+pub struct Engine {
+    pub max_items: Option<u64>,
 }
 
 #[cfg(test)]
