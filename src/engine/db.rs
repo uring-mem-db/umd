@@ -10,6 +10,7 @@ pub(crate) trait KeyValueStore<K, V> {
 /// while setting values in the database. The linked list is used to implement a LRU cache. In this way we can have
 /// a fast access to the most recently used values.
 struct Entry {
+    key: String,
     value: String,
     prev: Option<NonNull<Entry>>,
     next: Option<NonNull<Entry>>,
@@ -20,17 +21,28 @@ pub(crate) struct HashMapDb {
     data: HashMap<String, Entry>,
     head: Option<NonNull<Entry>>,
     tail: Option<NonNull<Entry>>,
+
+    max_items: Option<u64>,
 }
 
 impl HashMapDb {
-    pub(crate) fn new() -> Self {
-        Self::default()
+    pub(crate) fn new(max_items: Option<u64>) -> Self {
+        let hm = match max_items {
+            Some(max_items) => HashMap::with_capacity(max_items as usize),
+            None => HashMap::new(),
+        };
+
+        Self {
+            max_items,
+            data: hm,
+            ..Default::default()
+        }
     }
 }
 
 impl KeyValueStore<&str, String> for HashMapDb {
     fn get(&mut self, key: &str) -> Option<&String> {
-        let mut v = self.data.get_mut(key)?;
+        let v = self.data.get_mut(key)?;
         if self.tail != self.head && self.tail != Some(v.into()) {
             // adjust head to second node if head is the node to be removed
             if self.head == Some(v.into()) {
@@ -68,10 +80,20 @@ impl KeyValueStore<&str, String> for HashMapDb {
 
     fn set(&mut self, key: &str, value: String) {
         let entry = Entry {
+            key: key.to_string(),
             value,
             prev: self.tail,
             next: None,
         };
+
+        if let Some(max) = self.max_items {
+            if self.data.len() as u64 == max {
+                let h = self.head.as_ref().unwrap();
+                unsafe {
+                    self.data.remove(&(*h.as_ptr()).key);
+                }
+            }
+        }
 
         self.data.insert(key.to_string(), entry);
         let e = self.data.get(key).unwrap();
@@ -122,9 +144,23 @@ impl KeyValueStore<&str, String> for HashMapDb {
 mod tests {
     use super::*;
 
+#[test]
+fn lru() {
+    let mut db = HashMapDb::new(Some(3));
+    db.set("one", "one".to_string());
+    db.set("two", "two".to_string());
+    db.set("three", "three".to_string());
+
+    db.set("four", "four".to_string());
+    let outdated = db.get("one");
+    assert_eq!(outdated, None);
+
+    assert_eq!(db.get("two"), Some(&"two".to_string()));
+}
+
     #[test]
-    fn lru() {
-        let mut db = HashMapDb::new();
+    fn linked_list() {
+        let mut db = HashMapDb::new(None);
 
         // first set
         db.set("foo", "bar".to_string());

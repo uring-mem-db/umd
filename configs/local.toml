@@ -1,2 +1,5 @@
 [logger]
 level = "info"
+
+[engine]
+max_items = 10

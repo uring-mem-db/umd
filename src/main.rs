@@ -28,7 +28,7 @@ async fn main() {
         .unwrap_or_else(|| "127.0.0.1:9999".to_string());
     let listener = monoio::net::TcpListener::bind(addr).unwrap();
     tracing::info!("listening on {}", listener.local_addr().unwrap());
-    let db = Arc::new(Mutex::new(HashMapDb::new()));
+    let db = Arc::new(Mutex::new(HashMapDb::new(config.engine.max_items)));
 
     loop {
         let incoming = listener.accept().await;
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn exec_incr() {
-        let mut db = HashMapDb::new();
+        let mut db = HashMapDb::new(None);
 
         // incr with no key
         let cmd = protocol::Command::Incr {
