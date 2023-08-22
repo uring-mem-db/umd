@@ -3,7 +3,7 @@ use super::{Command, CommandResponse, Protocol};
 pub struct Curl {}
 
 impl Protocol for Curl {
-    fn decode(raw: &[u8], now: std::time::Instant) -> Result<Command, String> {
+    fn decode(raw: &[u8]) -> Result<Command, String> {
         let request = String::from_utf8(raw.to_vec()).map_err(|_| "Error while decoding RESP")?;
         let request = request.trim();
         let mut lines = request.lines();
@@ -29,7 +29,7 @@ impl Protocol for Curl {
             }
         }
 
-        Ok(Command::new(method, path, body, options, now))
+        Ok(Command::new(method, path, body, options))
     }
 
     fn encode(response: CommandResponse) -> Vec<u8> {
@@ -60,14 +60,13 @@ mod tests {
         
         value EX 10"#;
 
-        let now = std::time::Instant::now();
-        let output = Curl::decode(raw.as_bytes(), now).unwrap();
+        let output = Curl::decode(raw.as_bytes()).unwrap();
         assert!(
             output
                 == Command::Set {
                     key: "key".to_string(),
                     value: "value".to_string(),
-                    ttl: Some(now + std::time::Duration::from_secs(10)),
+                    ttl: Some(std::time::Duration::from_secs(10)),
                 }
         );
     }
@@ -80,7 +79,7 @@ User-Agent: curl/7.74.0
 Accept: */*
 "#;
 
-        let output = Curl::decode(raw.as_bytes(), std::time::Instant::now()).unwrap();
+        let output = Curl::decode(raw.as_bytes()).unwrap();
         assert!(
             output
                 == Command::Get {
@@ -100,7 +99,7 @@ Accept: */*
         
         value"#;
 
-        let output = Curl::decode(raw.as_bytes(), std::time::Instant::now()).unwrap();
+        let output = Curl::decode(raw.as_bytes()).unwrap();
         assert!(
             output
                 == Command::Set {
@@ -121,7 +120,7 @@ Accept: */*
         Content-Type: application/x-www-form-urlencoded
 "#;
 
-        let output = Curl::decode(raw.as_bytes(), std::time::Instant::now()).unwrap();
+        let output = Curl::decode(raw.as_bytes()).unwrap();
         assert!(
             output
                 == Command::Del {
