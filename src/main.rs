@@ -59,7 +59,7 @@ async fn main() {
                         tracing::trace!("after db lock");
 
                         let close_stream_after_response = request.kind == RequestKind::Http;
-                        let response = execute_command(request.cmd, &mut db);
+                        let response = execute_command(request.cmd, &mut db, std::time::Instant::now());
                         let answer: Vec<u8> = create_answer(response, request.kind);
                         let (res, _) = stream.write_all(answer).await;
                         match res {
@@ -80,7 +80,11 @@ async fn main() {
     }
 }
 
-fn execute_command(cmd: protocol::Command, db: &mut HashMapDb) -> CommandResponse {
+fn execute_command(
+    cmd: protocol::Command,
+    db: &mut HashMapDb,
+    now: std::time::Instant,
+) -> CommandResponse {
     match cmd {
         protocol::Command::Get { key } => CommandResponse::String {
             value: db
@@ -89,7 +93,7 @@ fn execute_command(cmd: protocol::Command, db: &mut HashMapDb) -> CommandRespons
                 .to_owned(),
         },
         protocol::Command::Set { key, value, ttl } => {
-            db.set(key.as_str(), value, ttl);
+            db.set(key.as_str(), value, ttl.map(|ttl| now + ttl));
             CommandResponse::String {
                 value: "OK".to_owned(),
             }
@@ -147,9 +151,8 @@ struct Request {
 }
 
 fn parse_request(raw_request: &[u8]) -> Result<Request, String> {
-    let now = std::time::Instant::now();
-    let http_cmd = protocol::curl::Curl::decode(raw_request, now);
-    let redis_cli_cmd = protocol::resp::Resp::decode(raw_request, now);
+    let http_cmd = protocol::curl::Curl::decode(raw_request);
+    let redis_cli_cmd = protocol::resp::Resp::decode(raw_request);
 
     match (http_cmd, redis_cli_cmd) {
         (Ok(cmd), _) => Ok(Request {
@@ -177,7 +180,7 @@ mod tests {
             key: "key".to_string(),
         };
 
-        let res = execute_command(cmd, &mut db);
+        let res = execute_command(cmd, &mut db, std::time::Instant::now());
         assert!(
             res == CommandResponse::String {
                 value: "OK".to_owned()
@@ -195,7 +198,7 @@ mod tests {
         let cmd = protocol::Command::Incr {
             key: "key".to_string(),
         };
-        let res = execute_command(cmd, &mut db);
+        let res = execute_command(cmd, &mut db, std::time::Instant::now());
         assert!(
             res == CommandResponse::String {
                 value: "OK".to_owned()
