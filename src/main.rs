@@ -59,7 +59,8 @@ async fn main() {
                         tracing::trace!("after db lock");
 
                         let close_stream_after_response = request.kind == RequestKind::Http;
-                        let response = execute_command(request.cmd, &mut db, std::time::Instant::now());
+                        let response =
+                            execute_command(request.cmd, &mut db, std::time::Instant::now());
                         let answer: Vec<u8> = create_answer(response, request.kind);
                         let (res, _) = stream.write_all(answer).await;
                         match res {

@@ -103,7 +103,7 @@ impl TryFrom<String> for RespType {
 impl Protocol for Resp {
     fn decode(raw: &[u8]) -> Result<Command, String> {
         let s = String::from_utf8(raw.to_vec()).map_err(|_| "Error while decoding RESP")?;
-        if s == "PING\r\n" {
+        if s.contains("PING") {
             return Ok(Command::Ping);
         }
 
