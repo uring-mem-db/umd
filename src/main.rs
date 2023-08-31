@@ -1,14 +1,9 @@
-use std::{
-    str::FromStr,
-    sync::{Arc, Mutex},
-};
-
 use engine::db::{HashMapDb, KeyValueStore};
+use std::str::FromStr;
 
 mod config;
 mod engine;
 mod protocol;
-
 use monoio::io::{AsyncReadRent, AsyncWriteRentExt};
 use protocol::Protocol;
 
@@ -28,16 +23,30 @@ async fn main() {
         .unwrap_or_else(|| "127.0.0.1:9999".to_string());
     let listener = monoio::net::TcpListener::bind(addr).unwrap();
     tracing::info!("listening on {}", listener.local_addr().unwrap());
-    let db = Arc::new(Mutex::new(HashMapDb::new(config.engine.max_items)));
+    let db = std::rc::Rc::new(std::cell::RefCell::new(HashMapDb::new(
+        config.engine.max_items,
+    )));
+
+    let number_of_connections = std::rc::Rc::new(std::cell::RefCell::new(0));
 
     loop {
         let incoming = listener.accept().await;
-        let db = db.clone();
+        let db = std::rc::Rc::clone(&db);
+        let number_of_connections = std::rc::Rc::clone(&number_of_connections);
 
         monoio::spawn(async move {
             match incoming {
                 Ok((mut stream, addr)) => {
-                    tracing::info!("accepted a connection from {}", addr);
+                    {
+                        let mut n = number_of_connections.borrow_mut();
+                        *n += 1;
+                        tracing::info!(
+                            "accepted a connection from {} (total concurrent {})",
+                            addr,
+                            *n
+                        );
+                    }
+
                     loop {
                         let buf: Vec<u8> = Vec::with_capacity(8 * 1024);
                         let (res, b) = stream.read(buf).await;
@@ -54,13 +63,11 @@ async fn main() {
 
                         tracing::debug!(content = content.as_ref(), "received");
                         let request = parse_request(content.as_bytes()).unwrap();
-                        tracing::trace!("before db lock");
-                        let mut db = db.lock().unwrap();
-                        tracing::trace!("after db lock");
-
                         let close_stream_after_response = request.kind == RequestKind::Http;
+                        let mut db = db.borrow_mut();
                         let response =
                             execute_command(request.cmd, &mut db, std::time::Instant::now());
+                        drop(db);
                         let answer: Vec<u8> = create_answer(response, request.kind);
                         let (res, _) = stream.write_all(answer).await;
                         match res {
@@ -69,13 +76,21 @@ async fn main() {
                         }
 
                         if close_stream_after_response {
+                            tracing::info!("request close stream");
                             break;
                         }
                     }
+
+                    tracing::info!("close stream connection");
                 }
                 Err(e) => {
                     tracing::error!("accepted connection failed: {}", e);
                 }
+            }
+
+            {
+                let mut n = number_of_connections.borrow_mut();
+                *n -= 1;
             }
         });
     }
