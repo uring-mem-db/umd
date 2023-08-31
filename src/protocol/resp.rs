@@ -109,10 +109,10 @@ impl Protocol for Resp {
 
         let rt = RespType::try_from(s)?;
         match rt {
-            RespType::SimpleString { value } => todo!(),
-            RespType::Error { value } => todo!(),
-            RespType::Integer { value } => todo!(),
-            RespType::BulkString { value } => todo!(),
+            RespType::SimpleString { .. } => todo!(),
+            RespType::Error { .. } => todo!(),
+            RespType::Integer { .. } => todo!(),
+            RespType::BulkString { .. } => todo!(),
             RespType::Array { value } => {
                 let mut it = value.into_iter();
                 let operation = if let Some(s) = it.next() {

@@ -76,10 +76,9 @@ impl KeyValueStore<&str, String> for HashMapDb {
                     (*tail.as_ptr()).next = Some(v.into());
                 }
             }
-            unsafe {
-                (*(v)).prev = self.tail;
-                (*(v)).next = None;
-            }
+
+            (v).prev = self.tail;
+            (v).next = None;
 
             self.tail = Some(v.into());
         }
