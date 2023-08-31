@@ -118,7 +118,7 @@ fn execute_command(
                 value: "OK".to_owned(),
             }
         }
-        protocol::commands::Command::COMMAND_DOCS => {
+        protocol::commands::Command::CommandDocs => {
             protocol::commands::CommandResponse::Array { value: Vec::new() }
         }
         protocol::commands::Command::Config => protocol::commands::CommandResponse::String {
@@ -167,6 +167,8 @@ struct Request {
 }
 
 fn parse_request(raw_request: &[u8]) -> Result<Request, String> {
+    // TODO: This should be optimize because in this way we try to do 2 decoding instead of stopping at first, bonus,
+    // http can be under feature flag in order to skip when we are stable.
     let http_cmd = protocol::curl::Curl::decode(raw_request);
     let redis_cli_cmd = protocol::resp::Resp::decode(raw_request);
 

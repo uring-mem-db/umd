@@ -17,7 +17,7 @@ pub(crate) enum Command {
     Del { key: String },
 
     /// Return documentary information about commands.
-    COMMAND_DOCS,
+    CommandDocs,
 
     /// Returns the config for the server instance.
     Config,
@@ -35,29 +35,11 @@ impl Command {
         let key = key.trim_matches('/').to_string();
         let kind = kind.to_lowercase();
         match kind.as_str() {
-            "command" if key == "DOCS" => Command::COMMAND_DOCS,
+            "command" if key == "DOCS" => Command::CommandDocs,
             "get" => Command::Get { key },
-            "post" | "set" => match value {
-                Some(v) => Command::Set {
-                    key,
-                    value: v.trim().to_string(),
-                    ttl: if options.is_empty() {
-                        None
-                    } else {
-                        if options.len() != 2 {
-                            tracing::info!("Options for set not supported");
-                        }
-
-                        let cmd = &options[0];
-                        let value = options[1].parse().unwrap();
-                        if cmd == "EX" {
-                            Some(std::time::Duration::from_secs(value))
-                        } else {
-                            tracing::info!("Options for set not supported");
-                            None
-                        }
-                    },
-                },
+            "set" => make_set(key, value.unwrap(), options),
+            "post" => match value {
+                Some(v) => make_set(key, v, options),
                 None => Command::Del { key },
             },
             "del" => Command::Del { key },
@@ -66,6 +48,29 @@ impl Command {
             "incr" => Command::Incr { key },
             _ => unimplemented!("not implemented"),
         }
+    }
+}
+
+fn make_set(key: String, v: String, options: Vec<String>) -> Command {
+    Command::Set {
+        key,
+        value: v.trim().to_string(),
+        ttl: if options.is_empty() {
+            None
+        } else {
+            if options.len() != 2 {
+                tracing::info!("Options for set not supported");
+            }
+
+            let cmd = &options[0];
+            let value = options[1].parse().unwrap();
+            if cmd == "EX" {
+                Some(std::time::Duration::from_secs(value))
+            } else {
+                tracing::info!("Options for set not supported");
+                None
+            }
+        },
     }
 }
 
