@@ -140,6 +140,12 @@ fn execute_command(
                 value: "OK".to_owned(),
             }
         }
+        protocol::commands::Command::FlushDb => {
+            db.flush();
+            protocol::commands::CommandResponse::String {
+                value: "OK".to_owned(),
+            }
+        }
     }
 }
 

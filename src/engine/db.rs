@@ -39,6 +39,11 @@ impl HashMapDb {
             ..Default::default()
         }
     }
+
+    pub(crate) fn flush(&mut self) {
+        let m = self.max_items;
+        *self = Self::new(m);
+    }
 }
 
 impl KeyValueStore<&str, String> for HashMapDb {
@@ -156,6 +161,20 @@ impl KeyValueStore<&str, String> for HashMapDb {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flush() {
+        let mut db = HashMapDb::new(Some(3));
+        db.set("one", "one".to_string(), None);
+        db.set("two", "two".to_string(), None);
+        db.set("three", "three".to_string(), None);
+
+        db.flush();
+
+        assert_eq!(db.get("one", std::time::Instant::now()), None);
+        assert_eq!(db.get("two", std::time::Instant::now()), None);
+        assert_eq!(db.get("three", std::time::Instant::now()), None);
+    }
 
     #[test]
     fn lru() {

@@ -28,12 +28,16 @@ pub(crate) enum Command {
     /// Increments the number stored at key by one.
     /// If the key does not exist, it is set to 0 before performing the operation
     Incr { key: String },
+
+    /// Removes all keys from the current database.
+    FlushDb,
 }
 
 impl Command {
     pub fn new(kind: &str, key: &str, value: Option<String>, options: Vec<String>) -> Self {
         let key = key.trim_matches('/').to_string();
         let kind = kind.to_lowercase();
+
         match kind.as_str() {
             "command" if key == "DOCS" => Command::CommandDocs,
             "get" => Command::Get { key },
@@ -46,6 +50,7 @@ impl Command {
             "config" => Command::Config,
             "ping" => Command::Ping,
             "incr" => Command::Incr { key },
+            "flushdb" => Command::FlushDb,
             _ => unimplemented!("not implemented"),
         }
     }
