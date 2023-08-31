@@ -1,4 +1,4 @@
-use super::{Command, CommandResponse, Protocol};
+use super::{commands::Command, commands::CommandResponse, Protocol};
 
 /// RESP is actually a serialization protocol that supports the following data types: Simple Strings, Errors, Integers, Bulk Strings, and Arrays.
 pub struct Resp {}

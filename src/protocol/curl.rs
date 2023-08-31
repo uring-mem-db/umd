@@ -1,4 +1,4 @@
-use super::{Command, CommandResponse, Protocol};
+use super::{commands::Command, commands::CommandResponse, Protocol};
 
 pub struct Curl {}
 

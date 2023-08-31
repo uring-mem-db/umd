@@ -1,13 +1,11 @@
 use engine::db::{HashMapDb, KeyValueStore};
+use protocol::Protocol;
 use std::str::FromStr;
 
 mod config;
 mod engine;
 mod protocol;
 use monoio::io::{AsyncReadRent, AsyncWriteRentExt};
-use protocol::Protocol;
-
-use crate::protocol::CommandResponse;
 
 #[monoio::main]
 async fn main() {
@@ -97,37 +95,39 @@ async fn main() {
 }
 
 fn execute_command(
-    cmd: protocol::Command,
+    cmd: protocol::commands::Command,
     db: &mut HashMapDb,
     now: std::time::Instant,
-) -> CommandResponse {
+) -> protocol::commands::CommandResponse {
     match cmd {
-        protocol::Command::Get { key } => CommandResponse::String {
+        protocol::commands::Command::Get { key } => protocol::commands::CommandResponse::String {
             value: db
                 .get(key.as_str(), std::time::Instant::now())
                 .map_or("not found", |v| v)
                 .to_owned(),
         },
-        protocol::Command::Set { key, value, ttl } => {
+        protocol::commands::Command::Set { key, value, ttl } => {
             db.set(key.as_str(), value, ttl.map(|ttl| now + ttl));
-            CommandResponse::String {
+            protocol::commands::CommandResponse::String {
                 value: "OK".to_owned(),
             }
         }
-        protocol::Command::Del { key } => {
+        protocol::commands::Command::Del { key } => {
             db.del(key.as_str());
-            CommandResponse::String {
+            protocol::commands::CommandResponse::String {
                 value: "OK".to_owned(),
             }
         }
-        protocol::Command::COMMAND_DOCS => CommandResponse::Array { value: Vec::new() },
-        protocol::Command::Config => CommandResponse::String {
+        protocol::commands::Command::COMMAND_DOCS => {
+            protocol::commands::CommandResponse::Array { value: Vec::new() }
+        }
+        protocol::commands::Command::Config => protocol::commands::CommandResponse::String {
             value: "OK".to_owned(),
         },
-        protocol::Command::Ping => CommandResponse::String {
+        protocol::commands::Command::Ping => protocol::commands::CommandResponse::String {
             value: "PONG".to_owned(),
         },
-        protocol::Command::Incr { key } => {
+        protocol::commands::Command::Incr { key } => {
             match db.get(&key, std::time::Instant::now()) {
                 Some(k) => {
                     let k = k.parse::<u64>().unwrap();
@@ -136,14 +136,14 @@ fn execute_command(
                 None => db.set(&key, 1.to_string(), None),
             }
 
-            CommandResponse::String {
+            protocol::commands::CommandResponse::String {
                 value: "OK".to_owned(),
             }
         }
     }
 }
 
-fn create_answer(response: CommandResponse, kind: RequestKind) -> Vec<u8> {
+fn create_answer(response: protocol::commands::CommandResponse, kind: RequestKind) -> Vec<u8> {
     match kind {
         RequestKind::Http => protocol::curl::Curl::encode(response),
         RequestKind::RedisCLI => protocol::resp::Resp::encode(response),
@@ -163,7 +163,7 @@ enum RequestKind {
 #[derive(Debug)]
 struct Request {
     kind: RequestKind,
-    cmd: protocol::Command,
+    cmd: protocol::commands::Command,
 }
 
 fn parse_request(raw_request: &[u8]) -> Result<Request, String> {
@@ -192,13 +192,13 @@ mod tests {
         let mut db = HashMapDb::new(None);
 
         // incr with no key
-        let cmd = protocol::Command::Incr {
+        let cmd = protocol::commands::Command::Incr {
             key: "key".to_string(),
         };
 
         let res = execute_command(cmd, &mut db, std::time::Instant::now());
         assert!(
-            res == CommandResponse::String {
+            res == protocol::commands::CommandResponse::String {
                 value: "OK".to_owned()
             }
         );
@@ -211,12 +211,12 @@ mod tests {
         assert!(v == 1);
 
         // incr with key
-        let cmd = protocol::Command::Incr {
+        let cmd = protocol::commands::Command::Incr {
             key: "key".to_string(),
         };
         let res = execute_command(cmd, &mut db, std::time::Instant::now());
         assert!(
-            res == CommandResponse::String {
+            res == protocol::commands::CommandResponse::String {
                 value: "OK".to_owned()
             }
         );
