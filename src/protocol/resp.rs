@@ -130,7 +130,8 @@ impl Protocol for Resp {
                         _ => panic!(),
                     }
                 } else {
-                    panic!()
+                    // No key means, single command
+                    return Ok(Command::new(&operation, "", None, vec![]));
                 };
 
                 let v = if let Some(s) = it.next() {
