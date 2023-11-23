@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-monoio = "0.1.9"
+monoio = "0.2.0"
 serde = { version = "1.0.188", features = ["derive"] }
 toml = "0.8.0"
 tracing = "0.1.37"
