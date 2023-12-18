@@ -1,4 +1,4 @@
-FROM rust:bookworm
+FROM rust:slim-bookworm
 
 RUN apt-get update && apt-get install -y \
     libssl-dev \
@@ -8,5 +8,7 @@ RUN apt-get update && apt-get install -y \
     clang \
     redis-tools \
     && rm -rf /var/lib/apt/lists/*
+
+RUN cargo install zellij
 
 WORKDIR /home

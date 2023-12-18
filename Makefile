@@ -1,7 +1,8 @@
-.PHONY: build-docker
-build-docker:
-	@docker build -t umd .
+.PHONY: build-docker-dev
+build-docker-dev:
+	@docker build -t umd-dev -f docker/Dockerfile-dev .
 
-.PHONY: run-docker
-run-docker:
-	@docker run -it -v $(PWD):/home umd
+.PHONY: run-docker-dev
+run-docker-dev:
+	@docker run -it -v $(PWD):/home umd-dev
+
