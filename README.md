@@ -15,8 +15,15 @@ make run-docker
 cargo run
 ```
 
+## Test
+
+It is possibile using redis client or redis protocol for testing.
+In benchmark for example we used `redis-benchmark`, but the plan is to working on custom protocol and better client.
+
 #### Testing with curl
-    
+
+With curl only few commands are supported and the plan is to support the very foundamentals commands and retrieve stats.
+
 ```zsh
 curl --data "value" localhost:9999/key          # set
 curl --data "value EX 10" localhost:9999/key    # set with TTL 10s
