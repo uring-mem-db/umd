@@ -21,9 +21,7 @@ async fn main() {
         .unwrap_or_else(|| "127.0.0.1:9999".to_string());
     let listener = monoio::net::TcpListener::bind(addr).unwrap();
     tracing::info!("listening on {}", listener.local_addr().unwrap());
-    let db = std::rc::Rc::new(std::cell::RefCell::new(HashMapDb::new(
-        config.engine.max_items,
-    )));
+    let db = std::rc::Rc::new(std::cell::RefCell::new(HashMapDb::new(config.engine.max_items)));
 
     let number_of_connections = std::rc::Rc::new(std::cell::RefCell::new(0));
 
@@ -118,6 +116,12 @@ fn execute_command(
                 value: "OK".to_owned(),
             }
         }
+        protocol::commands::Command::Exists { key } => {
+            let exists = db.exists(key.as_str(), now);
+            protocol::commands::CommandResponse::Integer {
+                value: if exists { 1 } else { 0 },
+            }
+        }
         protocol::commands::Command::CommandDocs => {
             protocol::commands::CommandResponse::Array { value: Vec::new() }
         }
@@ -196,6 +200,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn exec_get() {
+        let mut db = HashMapDb::new(None);
+        db.set("key", "value".to_string(), None);
+
+        let cmd = protocol::commands::Command::Get {
+            key: "key".to_string(),
+        };
+        let res = execute_command(cmd, &mut db, std::time::Instant::now());
+        assert_eq!(
+            res,
+            protocol::commands::CommandResponse::String {
+                value: "value".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn exec_exists() {
+        let mut db = HashMapDb::new(None);
+        db.set("key", "value".to_string(), None);
+
+        let cmd = protocol::commands::Command::Exists {
+            key: "key".to_string(),
+        };
+        let res = execute_command(cmd, &mut db, std::time::Instant::now());
+        assert_eq!(
+            res,
+            protocol::commands::CommandResponse::Integer { value: 1 }
+        );
+    }
+
+    #[test]
     fn exec_incr() {
         let mut db = HashMapDb::new(None);
 
@@ -205,8 +241,9 @@ mod tests {
         };
 
         let res = execute_command(cmd, &mut db, std::time::Instant::now());
-        assert!(
-            res == protocol::commands::CommandResponse::String {
+        assert_eq!(
+            res,
+            protocol::commands::CommandResponse::String {
                 value: "OK".to_owned()
             }
         );
@@ -216,15 +253,16 @@ mod tests {
             .unwrap()
             .parse::<u64>()
             .unwrap();
-        assert!(v == 1);
+        assert_eq!(v, 1);
 
         // incr with key
         let cmd = protocol::commands::Command::Incr {
             key: "key".to_string(),
         };
         let res = execute_command(cmd, &mut db, std::time::Instant::now());
-        assert!(
-            res == protocol::commands::CommandResponse::String {
+        assert_eq!(
+            res,
+            protocol::commands::CommandResponse::String {
                 value: "OK".to_owned()
             }
         );
@@ -234,7 +272,7 @@ mod tests {
             .unwrap()
             .parse::<u64>()
             .unwrap();
-        assert!(v == 2);
+        assert_eq!(v, 2);
     }
 
     #[test]

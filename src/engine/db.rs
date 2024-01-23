@@ -4,6 +4,10 @@ pub(crate) trait KeyValueStore<K, V> {
     fn get(&mut self, key: K, now: std::time::Instant) -> Option<&V>;
     fn set(&mut self, key: K, value: V, ttl: Option<std::time::Instant>);
     fn del(&mut self, key: K);
+
+    fn exists(&mut self, key: K, now: std::time::Instant) -> bool {
+        self.get(key, now).is_some()
+    }
 }
 
 /// Entry is a value that represents a key-value pair in the database. It also is a node of a linked list built

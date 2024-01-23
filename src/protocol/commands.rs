@@ -16,6 +16,9 @@ pub(crate) enum Command {
     /// Removes the specified keys. A key is ignored if it does not exist.
     Del { key: String },
 
+    /// Exists returns if key exists.
+    Exists { key: String },
+
     /// Return documentary information about commands.
     CommandDocs,
 
@@ -42,11 +45,14 @@ impl Command {
             "command" if key == "DOCS" => Command::CommandDocs,
             "get" => Command::Get { key },
             "set" => make_set(key, value.unwrap(), options),
-            "post" => match value {
-                Some(v) => make_set(key, v, options),
-                None => Command::Del { key },
-            },
+            "post" => {
+                match value {
+                    Some(v) => make_set(key, v, options),
+                    None => Command::Del { key },
+                }
+            }
             "del" => Command::Del { key },
+            "exists" => Command::Exists { key },
             "config" => Command::Config,
             "ping" => Command::Ping,
             "incr" => Command::Incr { key },
