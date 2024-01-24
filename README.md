@@ -30,20 +30,3 @@ curl --data "value EX 10" localhost:9999/key    # set with TTL 10s
 curl localhost:9999/key                         # get
 curl -X POST localhost:9999/key                 # del
 ```
-
-## Architecture
-
-### Engine
-
-### TTL (Time to live)
-
-For now the only implementation is lazy TTL, this means that the key will be deleted only when it is accessed.
-```mermaid
-sequenceDiagram
-    Client->>+Server: Set X:10 with TTL 5s
-    Server->>+Client: Ok, done
-    Client->>+Server: Get X
-    Server->>+Client: 10
-    Client->>+Server: Get X (after 10s)
-    Server->>+Client: None
-```

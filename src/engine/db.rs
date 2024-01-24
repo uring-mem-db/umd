@@ -140,12 +140,12 @@ impl KeyValueStore<&str, String> for HashMapDb {
             self.head = e.next;
         }
 
-        // adjust tail to second last node if tail is the node to be removed
+        // adjust tail to latest - 1 node if tail is the node to be removed
         if self.tail == Some(e.into()) {
             self.tail = e.prev;
         }
 
-        // remove node from the list
+        // remove node from the list in case is not the head or tail
         if let Some(prev) = e.prev {
             unsafe {
                 (*prev.as_ptr()).next = e.next;
