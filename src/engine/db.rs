@@ -254,7 +254,7 @@ mod tests {
             assert_eq!((*(db.head.unwrap().as_ptr())).value, "baz".to_string());
         }
 
-        // antoher remove
+        // another remove
         db.del("foz");
         assert_eq!(db.tail, db.head);
 
