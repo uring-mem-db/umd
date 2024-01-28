@@ -9,7 +9,15 @@ use monoio::io::{AsyncReadRent, AsyncWriteRentExt};
 
 #[monoio::main]
 async fn main() {
-    let config = config::Config::new();
+    let config_file = std::fs::read_to_string("configs/local.toml");
+    if config_file.is_err() {
+        tracing::error!(
+            "error on reading config file: {}",
+            config_file.err().unwrap()
+        );
+        return;
+    }
+    let config = config::Config::new(config_file.unwrap().as_str());
 
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
         .with_max_level(tracing::Level::from_str(&config.logger.level).unwrap())
@@ -21,7 +29,9 @@ async fn main() {
         .unwrap_or_else(|| "127.0.0.1:9999".to_string());
     let listener = monoio::net::TcpListener::bind(addr).unwrap();
     tracing::info!("listening on {}", listener.local_addr().unwrap());
-    let db = std::rc::Rc::new(std::cell::RefCell::new(HashMapDb::new(config.engine.max_items)));
+    let db = std::rc::Rc::new(std::cell::RefCell::new(HashMapDb::new(
+        config.engine.max_items,
+    )));
 
     let number_of_connections = std::rc::Rc::new(std::cell::RefCell::new(0));
 
@@ -280,7 +290,7 @@ mod tests {
         // NOTE: This is the first command redis-cli sends.
         let raw = "*2\r\n$7\r\nCOMMAND\r\n$4\r\nDOCS\r\n";
         let output = parse_request(raw.as_bytes()).unwrap();
-        assert!(output.kind == RequestKind::RedisCLI);
+        assert_eq!(output.kind, RequestKind::RedisCLI);
     }
 
     #[test]
@@ -292,6 +302,6 @@ Accept: */*
 "#;
 
         let output = parse_request(raw.as_bytes()).unwrap();
-        assert!(output.kind == RequestKind::Http);
+        assert_eq!(output.kind, RequestKind::Http);
     }
 }

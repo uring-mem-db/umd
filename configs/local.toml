@@ -3,3 +3,8 @@ level = "info"
 
 [engine]
 max_items = 10
+
+[engine.persistence]
+enabled = true
+path = "/tmp/umd/"
+flush_interval = "10s"

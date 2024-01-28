@@ -45,12 +45,10 @@ impl Command {
             "command" if key == "DOCS" => Command::CommandDocs,
             "get" => Command::Get { key },
             "set" => make_set(key, value.unwrap(), options),
-            "post" => {
-                match value {
-                    Some(v) => make_set(key, v, options),
-                    None => Command::Del { key },
-                }
-            }
+            "post" => match value {
+                Some(v) => make_set(key, v, options),
+                None => Command::Del { key },
+            },
             "del" => Command::Del { key },
             "exists" => Command::Exists { key },
             "config" => Command::Config,

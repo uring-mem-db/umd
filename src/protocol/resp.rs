@@ -189,14 +189,14 @@ mod tests {
     fn config_command() {
         let s = "*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$4\r\nsave\r\n*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$10\r\nappendonly\r\n";
         let cmd = Resp::decode(s.as_bytes()).unwrap();
-        assert!(cmd == Command::Config);
+        assert_eq!(cmd, Command::Config);
     }
 
     #[test]
     fn command_command() {
         let s = "PING\r\n";
         let cmd = Resp::decode(s.as_bytes()).unwrap();
-        assert!(cmd == Command::Ping);
+        assert_eq!(cmd, Command::Ping);
     }
 
     #[test]
@@ -358,8 +358,9 @@ mod tests {
     fn set_request() {
         let s = "*3\r\n$3\r\nset\r\n$4\r\nciao\r\n$4\r\ncome\r\n";
         let cmd = Resp::decode(s.as_bytes()).unwrap();
-        assert!(
-            cmd == Command::Set {
+        assert_eq!(
+            cmd,
+            Command::Set {
                 key: "ciao".to_string(),
                 value: "come".to_string(),
                 ttl: None,

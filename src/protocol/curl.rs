@@ -61,13 +61,13 @@ mod tests {
         value EX 10"#;
 
         let output = Curl::decode(raw.as_bytes()).unwrap();
-        assert!(
-            output
-                == Command::Set {
-                    key: "key".to_string(),
-                    value: "value".to_string(),
-                    ttl: Some(std::time::Duration::from_secs(10)),
-                }
+        assert_eq!(
+            output,
+            Command::Set {
+                key: "key".to_string(),
+                value: "value".to_string(),
+                ttl: Some(std::time::Duration::from_secs(10)),
+            }
         );
     }
 
@@ -80,11 +80,11 @@ Accept: */*
 "#;
 
         let output = Curl::decode(raw.as_bytes()).unwrap();
-        assert!(
-            output
-                == Command::Get {
-                    key: "key".to_string()
-                }
+        assert_eq!(
+            output,
+            Command::Get {
+                key: "key".to_string()
+            }
         );
     }
 
@@ -100,13 +100,13 @@ Accept: */*
         value"#;
 
         let output = Curl::decode(raw.as_bytes()).unwrap();
-        assert!(
-            output
-                == Command::Set {
-                    key: "key".to_string(),
-                    value: "value".to_string(),
-                    ttl: None,
-                }
+        assert_eq!(
+            output,
+            Command::Set {
+                key: "key".to_string(),
+                value: "value".to_string(),
+                ttl: None,
+            }
         );
     }
 
@@ -121,11 +121,11 @@ Accept: */*
 "#;
 
         let output = Curl::decode(raw.as_bytes()).unwrap();
-        assert!(
-            output
-                == Command::Del {
-                    key: "key".to_string(),
-                }
+        assert_eq!(
+            output,
+            Command::Del {
+                key: "key".to_string(),
+            }
         );
     }
 }
