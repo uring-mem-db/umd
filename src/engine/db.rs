@@ -1,3 +1,4 @@
+use crate::config;
 use std::{collections::HashMap, ptr::NonNull};
 
 pub(crate) trait KeyValueStore<K, V> {
@@ -31,14 +32,14 @@ pub(crate) struct HashMapDb {
 }
 
 impl HashMapDb {
-    pub(crate) fn new(max_items: Option<u64>) -> Self {
-        let hm = match max_items {
+    pub(crate) fn new(conf: config::Engine) -> Self {
+        let hm = match conf.max_items {
             Some(max_items) => HashMap::with_capacity(max_items as usize),
             None => HashMap::new(),
         };
 
         Self {
-            max_items,
+            max_items: conf.max_items,
             data: hm,
             ..Default::default()
         }
@@ -46,7 +47,10 @@ impl HashMapDb {
 
     pub(crate) fn flush(&mut self) {
         let m = self.max_items;
-        *self = Self::new(m);
+        *self = Self::new(config::Engine {
+            max_items: m,
+            ..Default::default()
+        });
     }
 }
 
@@ -168,7 +172,10 @@ mod tests {
 
     #[test]
     fn flush() {
-        let mut db = HashMapDb::new(Some(3));
+        let mut db = HashMapDb::new(config::Engine {
+            max_items: Some(3),
+            ..Default::default()
+        });
         db.set("one", "one".to_string(), None);
         db.set("two", "two".to_string(), None);
         db.set("three", "three".to_string(), None);
@@ -182,7 +189,10 @@ mod tests {
 
     #[test]
     fn lru() {
-        let mut db = HashMapDb::new(Some(3));
+        let mut db = HashMapDb::new(config::Engine {
+            max_items: Some(3),
+            ..Default::default()
+        });
         db.set("one", "one".to_string(), None);
         db.set("two", "two".to_string(), None);
         db.set("three", "three".to_string(), None);
@@ -199,7 +209,7 @@ mod tests {
 
     #[test]
     fn linked_list() {
-        let mut db = HashMapDb::new(None);
+        let mut db = HashMapDb::new(config::Engine::default());
 
         // first set
         db.set("foo", "bar".to_string(), None);
@@ -266,7 +276,7 @@ mod tests {
 
     #[test]
     fn lazy_ttl() {
-        let mut db = HashMapDb::new(None);
+        let mut db = HashMapDb::new(config::Engine::default());
         let now = std::time::Instant::now();
         db.set(
             "foo",

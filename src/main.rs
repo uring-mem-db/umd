@@ -17,10 +17,10 @@ async fn main() {
         );
         return;
     }
-    let config = config::Config::new(config_file.unwrap().as_str());
+    let c = config::Config::new(config_file.unwrap().as_str());
 
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
-        .with_max_level(tracing::Level::from_str(&config.logger.level).unwrap())
+        .with_max_level(tracing::Level::from_str(&c.logger.level).unwrap())
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
@@ -29,9 +29,7 @@ async fn main() {
         .unwrap_or_else(|| "127.0.0.1:9999".to_string());
     let listener = monoio::net::TcpListener::bind(addr).unwrap();
     tracing::info!("listening on {}", listener.local_addr().unwrap());
-    let db = std::rc::Rc::new(std::cell::RefCell::new(HashMapDb::new(
-        config.engine.max_items,
-    )));
+    let db = std::rc::Rc::new(std::cell::RefCell::new(HashMapDb::new(c.engine)));
 
     let number_of_connections = std::rc::Rc::new(std::cell::RefCell::new(0));
 
@@ -211,7 +209,7 @@ mod tests {
 
     #[test]
     fn exec_get() {
-        let mut db = HashMapDb::new(None);
+        let mut db = HashMapDb::new(config::Engine::default());
         db.set("key", "value".to_string(), None);
 
         let cmd = protocol::commands::Command::Get {
@@ -228,7 +226,7 @@ mod tests {
 
     #[test]
     fn exec_exists() {
-        let mut db = HashMapDb::new(None);
+        let mut db = HashMapDb::new(config::Engine::default());
         db.set("key", "value".to_string(), None);
 
         let cmd = protocol::commands::Command::Exists {
@@ -243,7 +241,7 @@ mod tests {
 
     #[test]
     fn exec_incr() {
-        let mut db = HashMapDb::new(None);
+        let mut db = HashMapDb::new(config::Engine::default());
 
         // incr with no key
         let cmd = protocol::commands::Command::Incr {
