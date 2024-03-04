@@ -6,7 +6,7 @@ pub struct Config {
 
 impl Config {
     pub fn new(config_file: &str) -> Self {
-        toml::from_str(&config_file)
+        toml::from_str(config_file)
             .map_err(|e| e.to_string())
             .unwrap()
     }
@@ -22,30 +22,33 @@ fn default_level() -> String {
     "info".to_string()
 }
 
-#[derive(Default, serde::Deserialize)]
+#[derive(Clone, Default, serde::Deserialize)]
 pub struct Engine {
+    /// Maximum number of items in the cache, if None, the cache is unbounded.
     pub max_items: Option<u64>,
     pub persistence: Option<Persistence>,
 }
 
-#[derive(Default, serde::Deserialize)]
+#[derive(Clone, Default, serde::Deserialize)]
 pub struct Persistence {
+    /// Enable or disable persistence
     pub enabled: bool,
 
-    #[serde(default = "default_path")]
-    pub path: String,
+    /// File to persist the data
+    #[serde(default = "default_file")]
+    pub file: String,
 
-    #[serde(default = "default_flush_interval")]
-    #[serde(with = "humantime_serde")]
-    pub flush_interval: std::time::Duration,
+    /// Flush the data to the file every N changes
+    #[serde(default = "default_flush_every_changes")]
+    pub flush_every_changes: u64,
 }
 
-fn default_flush_interval() -> std::time::Duration {
-    std::time::Duration::from_secs(10)
+fn default_flush_every_changes() -> u64 {
+    1000
 }
 
-fn default_path() -> String {
-    "./tmp/umd".to_string()
+fn default_file() -> String {
+    "./tmp/umd/persistence.bin".to_string()
 }
 
 #[cfg(test)]
@@ -63,8 +66,8 @@ mod tests {
 
             [engine.persistence]
             enabled = true
-            path = "./tmp/umd"
-            flush_interval = "15s"
+            file = "/tmp/umd/persistence.bin"
+            flush_every_changes = 10
         "#;
 
         let config = Config::new(config_file);
@@ -72,7 +75,7 @@ mod tests {
         assert_eq!(config.engine.max_items, Some(99));
         let p = config.engine.persistence.as_ref().unwrap();
         assert_eq!(p.enabled, true);
-        assert_eq!(p.path, "./tmp/umd");
-        assert_eq!(p.flush_interval.as_secs(), 15);
+        assert_eq!(p.file, "/tmp/umd/persistence.bin");
+        assert_eq!(p.flush_every_changes, 10);
     }
 }

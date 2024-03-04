@@ -6,5 +6,5 @@ max_items = 10
 
 [engine.persistence]
 enabled = true
-path = "/tmp/umd/"
-flush_interval = "10s"
+file = "/tmp/persistence.umd"
+flush_every_changes = 10
