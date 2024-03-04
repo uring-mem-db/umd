@@ -1,3 +1,8 @@
+# Benchmarks
+
+All benches should be performed without persistence features enabled.
+We can add benches with persistence in the future.
+
 ## Single connection
 
 ```bash

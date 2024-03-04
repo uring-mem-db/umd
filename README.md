@@ -2,6 +2,10 @@
 
 In memory database for linux only. Killer feature, it is using io_uring.
 
+## Architecture
+
+All documentation about the architecture is in the `docs` folder and in the comments of the code.
+
 ## Development
 
 If you are not on linux you can use the docker image to build and run the tests.
@@ -30,3 +34,9 @@ curl --data "value EX 10" localhost:9999/key    # set with TTL 10s
 curl localhost:9999/key                         # get
 curl -X POST localhost:9999/key                 # del
 ```
+
+## Benchmark
+
+Right now we just have [redis-bench](./benches/redis-bench.md)
+
+And a couple of scripts in the `scripts` folder.
