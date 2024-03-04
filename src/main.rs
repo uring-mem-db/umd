@@ -29,7 +29,8 @@ async fn main() {
         .unwrap_or_else(|| "127.0.0.1:9999".to_string());
     let listener = monoio::net::TcpListener::bind(addr).unwrap();
     tracing::info!("listening on {}", listener.local_addr().unwrap());
-    let db = std::rc::Rc::new(std::cell::RefCell::new(HashMapDb::new(c.engine)));
+
+    let db = engine::db::create_db(c.engine).unwrap();
 
     let number_of_connections = std::rc::Rc::new(std::cell::RefCell::new(0));
 

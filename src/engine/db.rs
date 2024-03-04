@@ -1,5 +1,42 @@
 use crate::config;
-use std::{collections::HashMap, ptr::NonNull};
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::ptr::NonNull;
+use std::rc::Rc;
+
+pub fn create_db(c: config::Engine) -> Result<Rc<RefCell<HashMapDb>>, std::io::Error> {
+    let db = Rc::new(RefCell::new(HashMapDb::new(c.clone())));
+
+    if let Some(p) = &c.persistence {
+        let data = std::fs::read_to_string(&p.file);
+        if data.is_err() {
+            return Ok(db);
+        }
+
+        let d = bincode::deserialize::<HashMapDb>(data?.as_bytes()).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("error on deserializing db: {}", e),
+            )
+        })?;
+
+        // disable persistence to avoid infinite loop
+        db.borrow_mut().config.persistence = None;
+
+        // fill db with data
+        d.data.iter().for_each(|(k, v)| {
+            db.borrow_mut().set(k, v.value.clone(), None);
+        });
+
+        // inject config
+        db.borrow_mut().config = c.clone();
+
+        tracing::info!("loaded db from {}", p.file);
+    }
+
+    Ok(db)
+}
 
 pub(crate) trait KeyValueStore<K, V> {
     fn get(&mut self, key: K, now: std::time::Instant) -> Option<&V>;
@@ -12,23 +49,38 @@ pub(crate) trait KeyValueStore<K, V> {
 }
 
 /// Entry is a value that represents a key-value pair in the database. It also is a node of a linked list built
-/// while setting values in the database. The linked list is used to implement a LRU cache. In this way we can have
-/// a fast access to the most recently used values.
+/// while setting values in the database. The linked list is used to implement LRU cache.
+/// In this way we can have fast access to the most recently used values.
+#[derive(serde::Deserialize, serde::Serialize)]
 struct Entry {
     key: String,
     value: String,
+
+    #[serde(skip_serializing, skip_deserializing)]
     prev: Option<NonNull<Entry>>,
+
+    #[serde(skip_serializing, skip_deserializing)]
     next: Option<NonNull<Entry>>,
 }
 
-#[derive(Default)]
+#[derive(Default, serde::Deserialize, serde::Serialize)]
 pub(crate) struct HashMapDb {
     data: HashMap<String, Entry>,
+
+    #[serde(skip_serializing, skip_deserializing)]
     head: Option<NonNull<Entry>>,
+
+    #[serde(skip_serializing, skip_deserializing)]
     tail: Option<NonNull<Entry>>,
+
+    #[serde(skip_serializing, skip_deserializing)]
     ttl: HashMap<String, std::time::Instant>,
 
-    max_items: Option<u64>,
+    #[serde(skip_serializing, skip_deserializing)]
+    config: config::Engine,
+
+    #[serde(skip_serializing, skip_deserializing)]
+    changes: u64,
 }
 
 impl HashMapDb {
@@ -39,18 +91,37 @@ impl HashMapDb {
         };
 
         Self {
-            max_items: conf.max_items,
             data: hm,
+            config: conf,
             ..Default::default()
         }
     }
 
+    /// Check the command [FlushDb](protocol::commands::Command::FlushDb) for more details.
     pub(crate) fn flush(&mut self) {
-        let m = self.max_items;
-        *self = Self::new(config::Engine {
-            max_items: m,
-            ..Default::default()
-        });
+        let c = self.config.clone();
+        *self = Self::new(c);
+    }
+
+    /// Check if we have persistence enabled and if we have it + we reach the threshold of changes,
+    /// we should persist the data to disk.
+    fn evaluate_update_persistence(&mut self) {
+        if let Some(persistence) = &self.config.persistence {
+            self.changes += 1;
+            if self.changes >= persistence.flush_every_changes {
+                self.changes = 0;
+                self.persist();
+            }
+        }
+    }
+
+    fn persist(&self) {
+        if let Some(persistence) = &self.config.persistence {
+            let s = bincode::serialize(&self).unwrap();
+            tracing::info!("persisting db to {}", persistence.file);
+            std::fs::File::create(&persistence.file).unwrap();
+            std::fs::write(&persistence.file, s).unwrap();
+        }
     }
 }
 
@@ -90,8 +161,8 @@ impl KeyValueStore<&str, String> for HashMapDb {
                 }
             }
 
-            (v).prev = self.tail;
-            (v).next = None;
+            v.prev = self.tail;
+            v.next = None;
 
             self.tail = Some(v.into());
         }
@@ -107,7 +178,7 @@ impl KeyValueStore<&str, String> for HashMapDb {
             next: None,
         };
 
-        if let Some(max) = self.max_items {
+        if let Some(max) = self.config.max_items {
             if self.data.len() as u64 == max {
                 let h = self.head.as_ref().unwrap();
                 unsafe {
@@ -134,6 +205,8 @@ impl KeyValueStore<&str, String> for HashMapDb {
         if let Some(ttl) = ttl {
             self.ttl.insert(key.to_string(), ttl);
         }
+
+        self.evaluate_update_persistence();
     }
 
     fn del(&mut self, key: &str) {
@@ -163,6 +236,8 @@ impl KeyValueStore<&str, String> for HashMapDb {
 
         self.data.remove(key);
         self.ttl.remove(key);
+
+        self.evaluate_update_persistence();
     }
 }
 
@@ -291,5 +366,90 @@ mod tests {
             db.get("foo", now + std::time::Duration::from_secs(11)),
             None
         );
+    }
+
+    #[test]
+    fn serialize_entry() {
+        let e = Entry {
+            key: "foo".to_string(),
+            value: "bar".to_string(),
+            prev: None,
+            next: None,
+        };
+
+        let s = bincode::serialize(&e).unwrap();
+        assert_eq!(s.len(), 22);
+
+        let ee = bincode::deserialize::<Entry>(&s).unwrap();
+        assert_eq!(e.key, ee.key);
+        assert_eq!(e.value, ee.value);
+    }
+
+    #[test]
+    fn serialize_db() {
+        let mut db = HashMapDb::new(config::Engine::default());
+        db.set("foo", "bar".to_string(), None);
+        db.set("baz", "qux".to_string(), None);
+
+        let s = bincode::serialize(&db).unwrap();
+        assert_eq!(s.len(), 74);
+
+        let mut dd = bincode::deserialize::<HashMapDb>(&s).unwrap();
+        assert_eq!(
+            dd.get("foo", std::time::Instant::now()),
+            Some(&"bar".to_string())
+        );
+        assert_eq!(
+            dd.get("baz", std::time::Instant::now()),
+            Some(&"qux".to_string())
+        );
+    }
+
+    #[test]
+    fn persist() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let file_path = file.path().to_str().unwrap().to_string();
+        let c = config::Engine {
+            persistence: Some(config::Persistence {
+                enabled: true,
+                flush_every_changes: 2,
+                file: file_path.clone(),
+            }),
+            ..Default::default()
+        };
+        let mut db = HashMapDb::new(c.clone());
+
+        {
+            // first 2 changes
+            db.set("one", "one".to_string(), None);
+            db.set("two", "two".to_string(), None);
+
+            let dd = create_db(c.clone()).unwrap();
+            assert_eq!(
+                dd.borrow_mut().get("one", std::time::Instant::now()),
+                Some(&"one".to_string())
+            );
+            assert_eq!(
+                dd.borrow_mut().get("two", std::time::Instant::now()),
+                Some(&"two".to_string())
+            );
+        }
+        {
+            // another 2 changes
+            db.del("one");
+            db.set("three", "three".to_string(), None);
+
+            let dd = create_db(c.clone()).unwrap();
+
+            assert_eq!(dd.borrow_mut().get("one", std::time::Instant::now()), None);
+            assert_eq!(
+                dd.borrow_mut().get("two", std::time::Instant::now()),
+                Some(&"two".to_string())
+            );
+            assert_eq!(
+                dd.borrow_mut().get("three", std::time::Instant::now()),
+                Some(&"three".to_string())
+            );
+        }
     }
 }
