@@ -100,6 +100,17 @@ impl TryFrom<String> for RespType {
     }
 }
 
+impl TryFrom<&str> for RespType {
+    type Error = &'static str;
+
+    fn try_from(value: &str) -> Result<Self, <RespType as TryFrom<&str>>::Error> {
+        let it = value.chars();
+        let mut rd = RespDecoder::new(it);
+
+        rd.next_chunk()
+    }
+}
+
 impl Protocol for Resp {
     fn decode(raw: &[u8]) -> Result<Command, String> {
         let s = String::from_utf8(raw.to_vec()).map_err(|_| "Error while decoding RESP")?;
@@ -325,7 +336,7 @@ mod tests {
         }
         {
             // array of array
-            let s = "*2\r\n*2\r\n:1\r\n+OK\r\n*2\r\n:4\r\n+TEST\r\n".to_string();
+            let s = "*2\r\n*2\r\n:1\r\n+OK\r\n*2\r\n:4\r\n+TEST\r\n";
             let rt = RespType::try_from(s);
 
             assert_eq!(
@@ -380,5 +391,12 @@ mod tests {
                 ttl: Some(std::time::Duration::from_secs(10)),
             }
         );
+    }
+
+    #[test]
+    fn dirty() {
+        let payload = r#"hello"#;
+        let cmd = Resp::decode(payload.as_bytes());
+        assert!(cmd.is_err());
     }
 }
