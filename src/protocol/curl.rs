@@ -8,30 +8,22 @@ pub struct Curl {}
 impl Protocol for Curl {
     fn decode(raw: &[u8]) -> Result<Command, ProtocolError> {
         let request = String::from_utf8(raw.to_vec())
-            .map_err(|_| ProtocolError::CurlProtocolDecodingError("invalid request".to_string()))?;
+            .map_err(|_| ProtocolError::CurlProtocolDecodingError)?;
         let request = request.trim();
         let mut lines = request.lines();
         let first_line = lines
             .next()
-            .ok_or(ProtocolError::CurlProtocolDecodingError(
-                "invalid request".to_string(),
-            ))?;
+            .ok_or(ProtocolError::CurlProtocolDecodingError)?;
         let mut parts = first_line.split_whitespace();
         let method = parts
             .next()
-            .ok_or(ProtocolError::CurlProtocolDecodingError(
-                "invalid request".to_string(),
-            ))?;
+            .ok_or(ProtocolError::CurlProtocolDecodingError)?;
         let path = parts
             .next()
-            .ok_or(ProtocolError::CurlProtocolDecodingError(
-                "invalid request".to_string(),
-            ))?;
+            .ok_or(ProtocolError::CurlProtocolDecodingError)?;
         let _version = parts
             .next()
-            .ok_or(ProtocolError::CurlProtocolDecodingError(
-                "invalid request".to_string(),
-            ))?;
+            .ok_or(ProtocolError::CurlProtocolDecodingError)?;
         let mut headers = std::collections::HashMap::new();
         let mut body = None;
         let mut options = vec![];
@@ -77,7 +69,7 @@ mod tests {
         Accept: */*
         Content-Length: 5
         Content-Type: application/x-www-form-urlencoded
-        
+
         value EX 10"#;
 
         let output = Curl::decode(raw.as_bytes()).unwrap();
@@ -116,7 +108,7 @@ Accept: */*
         Accept: */*
         Content-Length: 5
         Content-Type: application/x-www-form-urlencoded
-        
+
         value"#;
 
         let output = Curl::decode(raw.as_bytes()).unwrap();

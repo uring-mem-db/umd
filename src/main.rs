@@ -1,5 +1,5 @@
 use engine::db::{HashMapDb, KeyValueStore};
-use protocol::Protocol;
+use protocol::{Protocol, ProtocolError};
 use std::str::FromStr;
 
 mod config;
@@ -74,7 +74,7 @@ async fn main() {
                             }
                             Err(e) => {
                                 tracing::error!("error on parsing request: {}", e);
-                                let (r, _) = stream.write_all(b"-ERR invalid request\r\n").await;
+                                let (r, _) = stream.write_all(b"-ERR unknown command\r\n").await;
                                 match r {
                                     Ok(_) => (),
                                     Err(e) => tracing::error!("error on stream write: {}", e),
@@ -210,15 +210,15 @@ fn parse_request(raw_request: &[u8]) -> Result<Request, String> {
     let redis_cli_cmd = protocol::resp::Resp::decode(raw_request);
 
     match (http_cmd, redis_cli_cmd) {
-        (Ok(cmd), _) => Ok(Request {
-            kind: RequestKind::Http,
-            cmd,
-        }),
-        (_, Ok(cmd)) => Ok(Request {
+        (Err(ProtocolError::CurlProtocolDecodingError), r) => Ok(Request {
             kind: RequestKind::RedisCLI,
-            cmd,
+            cmd: r.map_err(|e| e.to_string())?,
         }),
-        _ => Err("invalid request".to_string()),
+        (r, Err(ProtocolError::RespProtocolDecodingError)) => Ok(Request {
+            kind: RequestKind::Http,
+            cmd: r.map_err(|e| e.to_string())?,
+        }),
+        _ => panic!("all situations should be handled"),
     }
 }
 
@@ -320,5 +320,18 @@ Accept: */*
 
         let output = parse_request(raw.as_bytes()).unwrap();
         assert_eq!(output.kind, RequestKind::Http);
+    }
+
+    #[test]
+    fn parse_invalid_request() {
+        let raw = "invalid";
+        let output = parse_request(raw.as_bytes());
+        assert!(output.is_err());
+        assert_eq!(output.err().unwrap(), "resp protocol decoding error");
+
+        let raw = "*3\r\n$3\r\nNOTACOMMAND\r\n$1\r\nx\r\n$2\r\n11\r\n";
+        let output = parse_request(raw.as_bytes());
+        assert!(output.is_err());
+        assert_eq!(output.err().unwrap(), "command not recognized notacommand");
     }
 }

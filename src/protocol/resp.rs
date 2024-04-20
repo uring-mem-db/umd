@@ -117,15 +117,13 @@ impl TryFrom<&str> for RespType {
 impl Protocol for Resp {
     fn decode(raw: &[u8]) -> Result<Command, ProtocolError> {
         let s = String::from_utf8(raw.to_vec())
-            .map_err(|e| ProtocolError::CommandNotRecognized(e.to_string()))?;
+            .map_err(|_| ProtocolError::RespProtocolDecodingError)?;
 
         if s.contains("PING") {
             return Ok(Command::Ping);
         }
 
-        let rt = RespType::try_from(s.as_str()).map_err(|e| {
-            ProtocolError::CommandNotRecognized(format!("Error while parsing RESP: {}", e))
-        })?;
+        let rt = RespType::try_from(s).map_err(|_| ProtocolError::RespProtocolDecodingError)?;
         match rt {
             RespType::SimpleString { .. } => todo!(),
             RespType::Error { .. } => todo!(),
@@ -403,5 +401,14 @@ mod tests {
         let payload = r#"hello"#;
         let cmd = Resp::decode(payload.as_bytes());
         assert!(cmd.is_err());
+        assert_eq!(cmd, Err(ProtocolError::RespProtocolDecodingError));
+
+        let payload = "*3\r\n$3\r\nNOTACOMMAND\r\n$1\r\nx\r\n$2\r\n11\r\n";
+        let cmd = Resp::decode(payload.as_bytes());
+        assert!(cmd.is_err());
+        assert_eq!(
+            cmd,
+            Err(ProtocolError::CommandNotRecognized("notacommand".into()))
+        );
     }
 }
