@@ -43,7 +43,7 @@ pub struct Persistence {
     pub flush_every_changes: u64,
 }
 
-fn default_flush_every_changes() -> u64 {
+const fn default_flush_every_changes() -> u64 {
     1000
 }
 

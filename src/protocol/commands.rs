@@ -1,7 +1,7 @@
 use super::ProtocolError;
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Command {
+pub enum Command {
     /// Get the value of key.
     /// If the key does not exist the special value nil is returned.
     /// An error is returned if the value stored at key is not a string, because GET only handles string values.
@@ -43,25 +43,28 @@ impl Command {
         kind: &str,
         key: &str,
         value: Option<String>,
-        options: Vec<String>,
+        options: &[String],
     ) -> Result<Self, ProtocolError> {
         let key = key.trim_matches('/').to_string();
         let kind = kind.to_lowercase();
 
         let cmd = match kind.as_str() {
-            "command" if key == "DOCS" => Command::Docs,
-            "get" => Command::Get { key },
-            "set" => make_set(key, value.unwrap(), options),
+            "command" if key == "DOCS" => Self::Docs,
+            "get" => Self::Get { key },
+            "set" => {
+                let v = value.ok_or(ProtocolError::CurlProtocolDecodingError)?;
+                make_set(key, &v, options)
+            }
             "post" => match value {
-                Some(v) => make_set(key, v, options),
-                None => Command::Del { key },
+                Some(v) => make_set(key, &v, options),
+                None => Self::Del { key },
             },
-            "del" => Command::Del { key },
-            "exists" => Command::Exists { key },
-            "config" => Command::Config,
-            "ping" => Command::Ping,
-            "incr" => Command::Incr { key },
-            "flushdb" => Command::FlushDb,
+            "del" => Self::Del { key },
+            "exists" => Self::Exists { key },
+            "config" => Self::Config,
+            "ping" => Self::Ping,
+            "incr" => Self::Incr { key },
+            "flushdb" => Self::FlushDb,
             _ => return Err(ProtocolError::CommandNotRecognized(kind)),
         };
 
@@ -69,7 +72,7 @@ impl Command {
     }
 }
 
-fn make_set(key: String, v: String, options: Vec<String>) -> Command {
+fn make_set(key: String, v: &str, options: &[String]) -> Command {
     Command::Set {
         key,
         value: v.trim().to_string(),
@@ -105,7 +108,7 @@ mod tests {
 
     #[test]
     fn test_new_command_ok() {
-        let cmd = Command::new("GET", "key", None, vec![]);
+        let cmd = Command::new("GET", "key", None, &[]);
         assert_eq!(
             cmd.unwrap(),
             Command::Get {
@@ -116,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_new_command_error() {
-        let cmd = Command::new("abc", "key", None, vec![]);
+        let cmd = Command::new("abc", "key", None, &[]);
         assert_eq!(
             cmd,
             Err(ProtocolError::CommandNotRecognized("abc".to_string()))

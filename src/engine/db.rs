@@ -5,10 +5,15 @@ use std::collections::HashMap;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
-pub fn create_db(c: config::Engine) -> Result<Rc<RefCell<HashMapDb>>, std::io::Error> {
+#[allow(clippy::module_name_repetitions)]
+pub fn create_db(c: &config::Engine) -> Result<Rc<RefCell<HashMapDb>>, std::io::Error> {
     let db = Rc::new(RefCell::new(HashMapDb::new(c.clone())));
 
     if let Some(p) = &c.persistence {
+        if !p.enabled {
+            return Ok(db);
+        }
+
         let data = std::fs::read_to_string(&p.file);
         if data.is_err() {
             return Ok(db);
@@ -17,7 +22,7 @@ pub fn create_db(c: config::Engine) -> Result<Rc<RefCell<HashMapDb>>, std::io::E
         let d = bincode::deserialize::<HashMapDb>(data?.as_bytes()).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("error on deserializing db: {}", e),
+                format!("error on deserializing db: {e}"),
             )
         })?;
 
@@ -38,7 +43,7 @@ pub fn create_db(c: config::Engine) -> Result<Rc<RefCell<HashMapDb>>, std::io::E
     Ok(db)
 }
 
-pub(crate) trait KeyValueStore<K, V> {
+pub trait KeyValueStore<K, V> {
     fn get(&mut self, key: K, now: std::time::Instant) -> Option<&V>;
     fn set(&mut self, key: K, value: V, ttl: Option<std::time::Instant>);
     fn del(&mut self, key: K);
@@ -63,8 +68,9 @@ struct Entry {
     next: Option<NonNull<Entry>>,
 }
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Default, serde::Deserialize, serde::Serialize)]
-pub(crate) struct HashMapDb {
+pub struct HashMapDb {
     data: HashMap<String, Entry>,
 
     #[serde(skip_serializing, skip_deserializing)]
@@ -85,10 +91,9 @@ pub(crate) struct HashMapDb {
 
 impl HashMapDb {
     pub(crate) fn new(conf: config::Engine) -> Self {
-        let hm = match conf.max_items {
-            Some(max_items) => HashMap::with_capacity(max_items as usize),
-            None => HashMap::new(),
-        };
+        let hm = conf.max_items.map_or_else(HashMap::new, |max_items| {
+            HashMap::with_capacity(usize::try_from(max_items).unwrap())
+        });
 
         Self {
             data: hm,
@@ -97,7 +102,7 @@ impl HashMapDb {
         }
     }
 
-    /// Check the command [FlushDb](protocol::commands::Command::FlushDb) for more details.
+    /// Check the command [`FlushDb`](protocol::commands::Command::FlushDb) for more details.
     pub(crate) fn flush(&mut self) {
         let c = self.config.clone();
         *self = Self::new(c);
@@ -117,6 +122,10 @@ impl HashMapDb {
 
     fn persist(&self) {
         if let Some(persistence) = &self.config.persistence {
+            if !persistence.enabled {
+                return;
+            }
+
             let s = bincode::serialize(&self).unwrap();
             tracing::info!("persisting db to {}", persistence.file);
             std::fs::File::create(&persistence.file).unwrap();
@@ -424,7 +433,7 @@ mod tests {
             db.set("one", "one".to_string(), None);
             db.set("two", "two".to_string(), None);
 
-            let dd = create_db(c.clone()).unwrap();
+            let dd = create_db(&c).unwrap();
             assert_eq!(
                 dd.borrow_mut().get("one", std::time::Instant::now()),
                 Some(&"one".to_string())
@@ -439,7 +448,7 @@ mod tests {
             db.del("one");
             db.set("three", "three".to_string(), None);
 
-            let dd = create_db(c.clone()).unwrap();
+            let dd = create_db(&c).unwrap();
 
             assert_eq!(dd.borrow_mut().get("one", std::time::Instant::now()), None);
             assert_eq!(

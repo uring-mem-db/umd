@@ -11,7 +11,7 @@ struct RespDecoder<I: Iterator<Item = char>> {
 }
 
 impl<I: Iterator<Item = char>> RespDecoder<I> {
-    fn new(chars: I) -> Self {
+    const fn new(chars: I) -> Self {
         Self { chars }
     }
 
@@ -63,7 +63,9 @@ impl<I: Iterator<Item = char>> RespDecoder<I> {
                         return Ok(RespType::None);
                     }
 
-                    let mut items: Vec<RespType> = Vec::with_capacity(len as usize);
+                    let mut items = Vec::with_capacity(
+                        usize::try_from(len).map_err(|_| "Error while parsing array")?,
+                    );
 
                     for _ in 0..len {
                         if let Ok(rt) = self.next_chunk() {
@@ -95,7 +97,7 @@ enum RespType {
 impl TryFrom<String> for RespType {
     type Error = &'static str;
 
-    fn try_from(value: String) -> Result<Self, <RespType as TryFrom<String>>::Error> {
+    fn try_from(value: String) -> Result<Self, <Self as TryFrom<String>>::Error> {
         let it = value.chars();
         let mut rd = RespDecoder::new(it);
 
@@ -106,7 +108,7 @@ impl TryFrom<String> for RespType {
 impl TryFrom<&str> for RespType {
     type Error = &'static str;
 
-    fn try_from(value: &str) -> Result<Self, <RespType as TryFrom<&str>>::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         let it = value.chars();
         let mut rd = RespDecoder::new(it);
 
@@ -131,14 +133,13 @@ impl Protocol for Resp {
             RespType::BulkString { .. } => todo!(),
             RespType::Array { value } => {
                 let mut it = value.into_iter();
-                let operation = if let Some(s) = it.next() {
-                    match s {
+                let operation = it.next().map_or_else(
+                    || panic!(),
+                    |s| match s {
                         RespType::SimpleString { value } | RespType::BulkString { value } => value,
                         _ => panic!(),
-                    }
-                } else {
-                    panic!()
-                };
+                    },
+                );
 
                 let key = if let Some(s) = it.next() {
                     match s {
@@ -147,28 +148,25 @@ impl Protocol for Resp {
                     }
                 } else {
                     // No key means, single command
-                    return Command::new(&operation, "", None, vec![]);
+                    return Command::new(&operation, "", None, &[]);
                 };
 
-                let v = if let Some(s) = it.next() {
-                    match s {
-                        RespType::SimpleString { value } | RespType::BulkString { value } => {
-                            Some(value)
-                        }
-                        _ => panic!(),
-                    }
-                } else {
-                    None
-                };
+                let v = it.next().map(|v| match v {
+                    RespType::SimpleString { value } | RespType::BulkString { value } => value,
+                    _ => panic!("array can be only of strings"),
+                });
 
                 let options = it
-                    .map(|v| match v {
-                        RespType::BulkString { value } => value,
-                        _ => panic!(),
+                    .map(|v| {
+                        if let RespType::BulkString { value } = v {
+                            value
+                        } else {
+                            panic!()
+                        }
                     })
                     .collect::<Vec<String>>();
 
-                Command::new(&operation, &key, v, options)
+                Command::new(&operation, &key, v, &options)
             }
             RespType::None => todo!(),
         }
@@ -185,7 +183,7 @@ impl Protocol for Resp {
             CommandResponse::Array { value } => {
                 let mut s = format!("*{}\r\n", value.len()).as_bytes().to_vec();
 
-                for el in value.into_iter() {
+                for el in value {
                     s.append(&mut Self::encode(el));
                 }
 

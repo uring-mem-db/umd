@@ -2,12 +2,13 @@ pub mod commands;
 pub mod curl;
 pub mod resp;
 
-pub(crate) trait Protocol {
+pub trait Protocol {
     fn decode(raw: &[u8]) -> Result<commands::Command, ProtocolError>;
     fn encode(command: commands::CommandResponse) -> Vec<u8>;
 }
 
-#[derive(thiserror::Error, Debug, PartialEq)]
+#[allow(clippy::module_name_repetitions)]
+#[derive(thiserror::Error, Debug, Eq, PartialEq)]
 pub enum ProtocolError {
     #[error("command not recognized {0}")]
     /// Error for when a command is not recognized, but decoding was successful.

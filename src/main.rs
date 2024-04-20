@@ -30,7 +30,7 @@ async fn main() {
     let listener = monoio::net::TcpListener::bind(addr).unwrap();
     tracing::info!("listening on {}", listener.local_addr().unwrap());
 
-    let db = engine::db::create_db(c.engine).unwrap();
+    let db = engine::db::create_db(&c.engine).unwrap();
 
     let number_of_connections = std::rc::Rc::new(std::cell::RefCell::new(0));
 
@@ -91,7 +91,7 @@ async fn main() {
                             drop(db);
                             r
                         };
-                        let answer: Vec<u8> = create_answer(response, request.kind);
+                        let answer: Vec<u8> = create_answer(response, &request.kind);
                         let (res, _) = stream.write_all(answer).await;
                         match res {
                             Ok(_) => (),
@@ -146,7 +146,7 @@ fn execute_command(
         protocol::commands::Command::Exists { key } => {
             let exists = db.exists(key.as_str(), now);
             protocol::commands::CommandResponse::Integer {
-                value: if exists { 1 } else { 0 },
+                value: i64::from(exists),
             }
         }
         protocol::commands::Command::Docs => {
@@ -180,7 +180,7 @@ fn execute_command(
     }
 }
 
-fn create_answer(response: protocol::commands::CommandResponse, kind: RequestKind) -> Vec<u8> {
+fn create_answer(response: protocol::commands::CommandResponse, kind: &RequestKind) -> Vec<u8> {
     match kind {
         RequestKind::Http => protocol::curl::Curl::encode(response),
         RequestKind::RedisCLI => protocol::resp::Resp::encode(response),
