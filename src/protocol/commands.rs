@@ -1,3 +1,5 @@
+use super::ProtocolError;
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     /// Get the value of key.
@@ -20,7 +22,7 @@ pub(crate) enum Command {
     Exists { key: String },
 
     /// Return documentary information about commands.
-    CommandDocs,
+    Docs,
 
     /// Returns the config for the server instance.
     Config,
@@ -37,12 +39,17 @@ pub(crate) enum Command {
 }
 
 impl Command {
-    pub fn new(kind: &str, key: &str, value: Option<String>, options: Vec<String>) -> Self {
+    pub fn new(
+        kind: &str,
+        key: &str,
+        value: Option<String>,
+        options: Vec<String>,
+    ) -> Result<Self, ProtocolError> {
         let key = key.trim_matches('/').to_string();
         let kind = kind.to_lowercase();
 
-        match kind.as_str() {
-            "command" if key == "DOCS" => Command::CommandDocs,
+        let cmd = match kind.as_str() {
+            "command" if key == "DOCS" => Command::Docs,
             "get" => Command::Get { key },
             "set" => make_set(key, value.unwrap(), options),
             "post" => match value {
@@ -55,8 +62,10 @@ impl Command {
             "ping" => Command::Ping,
             "incr" => Command::Incr { key },
             "flushdb" => Command::FlushDb,
-            _ => unimplemented!("not implemented"),
-        }
+            _ => return Err(ProtocolError::CommandNotRecognized(kind)),
+        };
+
+        Ok(cmd)
     }
 }
 
@@ -83,10 +92,34 @@ fn make_set(key: String, v: String, options: Vec<String>) -> Command {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum CommandResponse {
     String { value: String },
     Integer { value: i64 },
     Array { value: Vec<CommandResponse> },
-    Err { value: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_command_ok() {
+        let cmd = Command::new("GET", "key", None, vec![]);
+        assert_eq!(
+            cmd.unwrap(),
+            Command::Get {
+                key: "key".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_new_command_error() {
+        let cmd = Command::new("abc", "key", None, vec![]);
+        assert_eq!(
+            cmd,
+            Err(ProtocolError::CommandNotRecognized("abc".to_string()))
+        );
+    }
 }

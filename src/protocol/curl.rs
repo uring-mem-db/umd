@@ -1,17 +1,37 @@
-use super::{commands::Command, commands::CommandResponse, Protocol};
+use super::{
+    commands::{Command, CommandResponse},
+    Protocol, ProtocolError,
+};
 
 pub struct Curl {}
 
 impl Protocol for Curl {
-    fn decode(raw: &[u8]) -> Result<Command, String> {
-        let request = String::from_utf8(raw.to_vec()).map_err(|_| "Error while decoding RESP")?;
+    fn decode(raw: &[u8]) -> Result<Command, ProtocolError> {
+        let request = String::from_utf8(raw.to_vec())
+            .map_err(|_| ProtocolError::CurlProtocolDecodingError("invalid request".to_string()))?;
         let request = request.trim();
         let mut lines = request.lines();
-        let first_line = lines.next().ok_or("invalid request")?;
+        let first_line = lines
+            .next()
+            .ok_or(ProtocolError::CurlProtocolDecodingError(
+                "invalid request".to_string(),
+            ))?;
         let mut parts = first_line.split_whitespace();
-        let method = parts.next().ok_or("invalid request")?;
-        let path = parts.next().ok_or("invalid request")?;
-        let _version = parts.next().ok_or("invalid request")?;
+        let method = parts
+            .next()
+            .ok_or(ProtocolError::CurlProtocolDecodingError(
+                "invalid request".to_string(),
+            ))?;
+        let path = parts
+            .next()
+            .ok_or(ProtocolError::CurlProtocolDecodingError(
+                "invalid request".to_string(),
+            ))?;
+        let _version = parts
+            .next()
+            .ok_or(ProtocolError::CurlProtocolDecodingError(
+                "invalid request".to_string(),
+            ))?;
         let mut headers = std::collections::HashMap::new();
         let mut body = None;
         let mut options = vec![];
@@ -29,7 +49,7 @@ impl Protocol for Curl {
             }
         }
 
-        Ok(Command::new(method, path, body, options))
+        Command::new(method, path, body, options)
     }
 
     fn encode(response: CommandResponse) -> Vec<u8> {

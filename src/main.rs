@@ -67,12 +67,30 @@ async fn main() {
                         }
 
                         tracing::debug!(content = content.as_ref(), "received");
-                        let request = parse_request(content.as_bytes()).unwrap();
+                        let request = match parse_request(content.as_bytes()) {
+                            Ok(r) => {
+                                tracing::debug!(?r, "parsed request");
+                                r
+                            }
+                            Err(e) => {
+                                tracing::error!("error on parsing request: {}", e);
+                                let (r, _) = stream.write_all(b"-ERR invalid request\r\n").await;
+                                match r {
+                                    Ok(_) => (),
+                                    Err(e) => tracing::error!("error on stream write: {}", e),
+                                }
+                                break;
+                            }
+                        };
+
                         let close_stream_after_response = request.kind == RequestKind::Http;
-                        let mut db = db.borrow_mut();
-                        let response =
-                            execute_command(request.cmd, &mut db, std::time::Instant::now());
-                        drop(db);
+                        let response = {
+                            let mut db = db.borrow_mut();
+                            let n = std::time::Instant::now();
+                            let r = execute_command(request.cmd, &mut db, n);
+                            drop(db);
+                            r
+                        };
                         let answer: Vec<u8> = create_answer(response, request.kind);
                         let (res, _) = stream.write_all(answer).await;
                         match res {
@@ -131,7 +149,7 @@ fn execute_command(
                 value: if exists { 1 } else { 0 },
             }
         }
-        protocol::commands::Command::CommandDocs => {
+        protocol::commands::Command::Docs => {
             protocol::commands::CommandResponse::Array { value: Vec::new() }
         }
         protocol::commands::Command::Config => protocol::commands::CommandResponse::String {

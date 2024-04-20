@@ -1,4 +1,7 @@
-use super::{commands::Command, commands::CommandResponse, Protocol};
+use super::{
+    commands::{Command, CommandResponse},
+    Protocol, ProtocolError,
+};
 
 /// RESP is actually a serialization protocol that supports the following data types: Simple Strings, Errors, Integers, Bulk Strings, and Arrays.
 pub struct Resp {}
@@ -112,13 +115,17 @@ impl TryFrom<&str> for RespType {
 }
 
 impl Protocol for Resp {
-    fn decode(raw: &[u8]) -> Result<Command, String> {
-        let s = String::from_utf8(raw.to_vec()).map_err(|_| "Error while decoding RESP")?;
+    fn decode(raw: &[u8]) -> Result<Command, ProtocolError> {
+        let s = String::from_utf8(raw.to_vec())
+            .map_err(|e| ProtocolError::CommandNotRecognized(e.to_string()))?;
+
         if s.contains("PING") {
             return Ok(Command::Ping);
         }
 
-        let rt = RespType::try_from(s)?;
+        let rt = RespType::try_from(s.as_str()).map_err(|e| {
+            ProtocolError::CommandNotRecognized(format!("Error while parsing RESP: {}", e))
+        })?;
         match rt {
             RespType::SimpleString { .. } => todo!(),
             RespType::Error { .. } => todo!(),
@@ -142,7 +149,7 @@ impl Protocol for Resp {
                     }
                 } else {
                     // No key means, single command
-                    return Ok(Command::new(&operation, "", None, vec![]));
+                    return Command::new(&operation, "", None, vec![]);
                 };
 
                 let v = if let Some(s) = it.next() {
@@ -163,8 +170,7 @@ impl Protocol for Resp {
                     })
                     .collect::<Vec<String>>();
 
-                let c = Command::new(&operation, &key, v, options);
-                Ok(c)
+                Command::new(&operation, &key, v, options)
             }
             RespType::None => todo!(),
         }
@@ -187,7 +193,6 @@ impl Protocol for Resp {
 
                 s
             }
-            CommandResponse::Err { value } => format!("-{value}").as_bytes().to_vec(),
         }
     }
 }
