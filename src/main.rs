@@ -1,4 +1,4 @@
-use engine::db::{HashMapDb, KeyValueStore};
+use engine::db::HashMapDb;
 use protocol::{Protocol, ProtocolError};
 use std::str::FromStr;
 

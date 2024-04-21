@@ -43,16 +43,6 @@ pub fn create_db(c: &config::Engine) -> Result<Rc<RefCell<HashMapDb>>, std::io::
     Ok(db)
 }
 
-pub trait KeyValueStore<K, V> {
-    fn get(&mut self, key: K, now: std::time::Instant) -> Option<&V>;
-    fn set(&mut self, key: K, value: V, ttl: Option<std::time::Instant>);
-    fn del(&mut self, key: K);
-
-    fn exists(&mut self, key: K, now: std::time::Instant) -> bool {
-        self.get(key, now).is_some()
-    }
-}
-
 /// Entry is a value that represents a key-value pair in the database. It also is a node of a linked list built
 /// while setting values in the database. The linked list is used to implement LRU cache.
 /// In this way we can have fast access to the most recently used values.
@@ -69,6 +59,7 @@ struct Entry {
 }
 
 #[allow(clippy::module_name_repetitions)]
+#[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Default, serde::Deserialize, serde::Serialize)]
 pub struct HashMapDb {
     data: HashMap<String, Entry>,
@@ -89,6 +80,7 @@ pub struct HashMapDb {
     changes: u64,
 }
 
+
 impl HashMapDb {
     pub(crate) fn new(conf: config::Engine) -> Self {
         let hm = conf.max_items.map_or_else(HashMap::new, |max_items| {
@@ -103,7 +95,7 @@ impl HashMapDb {
     }
 
     /// Check the command [`FlushDb`](protocol::commands::Command::FlushDb) for more details.
-    pub(crate) fn flush(&mut self) {
+    pub fn flush(&mut self) {
         let c = self.config.clone();
         *self = Self::new(c);
     }
@@ -132,10 +124,12 @@ impl HashMapDb {
             std::fs::write(&persistence.file, s).unwrap();
         }
     }
-}
 
-impl KeyValueStore<&str, String> for HashMapDb {
-    fn get(&mut self, key: &str, now: std::time::Instant) -> Option<&String> {
+    pub fn exists(&mut self, key: &str, instant: std::time::Instant) -> bool {
+        self.get(key, instant).is_some()
+    }
+
+    pub fn get(&mut self, key: &str, now: std::time::Instant) -> Option<&String> {
         let v = match self.ttl.get(key) {
             Some(ttl) if *ttl <= now => {
                 self.del(key);
@@ -179,7 +173,7 @@ impl KeyValueStore<&str, String> for HashMapDb {
         Some(&v.value)
     }
 
-    fn set(&mut self, key: &str, value: String, ttl: Option<std::time::Instant>) {
+    pub fn set(&mut self, key: &str, value: String, ttl: Option<std::time::Instant>) {
         let entry = Entry {
             key: key.to_string(),
             value,
@@ -218,7 +212,7 @@ impl KeyValueStore<&str, String> for HashMapDb {
         self.evaluate_update_persistence();
     }
 
-    fn del(&mut self, key: &str) {
+    pub fn del(&mut self, key: &str) {
         let e = self.data.get_mut(key).unwrap();
 
         // adjust head to second node if head is the node to be removed
