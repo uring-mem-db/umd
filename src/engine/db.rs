@@ -80,7 +80,6 @@ pub struct HashMapDb {
     changes: u64,
 }
 
-
 impl HashMapDb {
     pub(crate) fn new(conf: config::Engine) -> Self {
         let hm = conf.max_items.map_or_else(HashMap::new, |max_items| {
