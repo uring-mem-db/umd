@@ -29,10 +29,10 @@ In benchmark for example we used `redis-benchmark`, but the plan is to working o
 With curl only few commands are supported and the plan is to support the very foundamentals commands and retrieve stats.
 
 ```zsh
-curl --data "value" localhost:9999/key          # set
-curl --data "value EX 10" localhost:9999/key    # set with TTL 10s
-curl localhost:9999/key                         # get
-curl -X POST localhost:9999/key                 # del
+curl --data "value" localhost:6379/key          # set
+curl --data "value EX 10" localhost:6379/key    # set with TTL 10s
+curl localhost:6379/key                         # get
+curl -X POST localhost:6379/key                 # del
 ```
 
 ## Benchmark
